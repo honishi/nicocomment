@@ -9,15 +9,13 @@ import datetime
 import urllib
 import urllib2
 import socket
-#from multiprocessing import Process
 import threading
 from threading import Thread
 from threading import Timer
 from lxml import etree
 
-# from nicoerror import UnexpectedStatusError
 import nicoerror
-# import nicolive
+import nicolive
 
 NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.config'
 
@@ -157,12 +155,10 @@ class NicoAlert(object):
                     msg += ch
 
     def handle_live(self, live_id, community_id, user_id):
-        self.logger.debug("*** live started: %s" % live_id)
-        '''
+        # self.logger.debug("*** live started: %s" % live_id)
         live = nicolive.NicoLive(self.mail, self.password, community_id, live_id)
         p = Thread(target=live.open_comment_server, args=())
         p.start()
-        '''
 
     def start(self):
         ticket = self.get_ticket()
@@ -172,8 +168,7 @@ class NicoAlert(object):
     def log_statistics(self):
         self.logger.debug(
             "active live thread: %s, total comment count: %s" %
-            (9999, 9999))
-        # (threading.active_count(), nicolive.NicoLive.total_comment_count))
+            (threading.active_count(), nicolive.NicoLive.total_comment_count))
 
         t = Timer(10, self.log_statistics)
         t.start()
