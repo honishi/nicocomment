@@ -1,0 +1,6 @@
+venv/
+*.pyc
+.cache
+
+nicocomment.config*
+!nicocomment.config.sample
