@@ -8,7 +8,6 @@ $ virtualenv --distribute venv
 $ source ./venv/bin/activate
 $ pip install -r requirements.txt
 ````
-note: you should install exact same version of `mecab-python` with `mecab` installed in system. 
 
 configure env
 --
@@ -28,4 +27,5 @@ memo
 --
 ````
 py.test --pep8 *.py
+./nicolive.py "test@example.com" "password" 160603xxx
 ````

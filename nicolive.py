@@ -5,6 +5,7 @@ import os
 import sys
 import ConfigParser
 import logging
+import logging.config
 import datetime
 import urllib2
 import socket
@@ -18,6 +19,8 @@ import cookielib
 import tweepy
 
 from nicoerror import UnexpectedStatusError
+
+SOCKET_TIMEOUT = 60 * 30
 
 COOKIE_CONTAINER_NOT_INITIALIZED = 0
 COOKIE_CONTAINER_INITIALIZING = 1
@@ -50,6 +53,8 @@ class NicoLive(object):
         self.community_id = community_id
         self.live_id = live_id
         self.comment_count = 0
+        # TODO: delete this later
+        # self.last_active_datetime = datetime.datetime.now()
 
         (self.force_debug_tweet, self.monitoring_user_ids) = self.get_config()
         # self.logger.debug("monitoring_user_ids: %s" % self.monitoring_user_ids)
@@ -120,6 +125,25 @@ class NicoLive(object):
             print u'error in post.'
             print error
 
+# utility
+    # TODO: delete this later
+    """
+    def kick_activity_check(self):
+        self.logger.debug("activity check kicked, last active datetime: %s" %
+                          self.last_active_datetime)
+
+        UNACTIVE_SECONDS_THREASHOLD = 10
+        datetime_diff = datetime.datetime.now() - self.last_active_datetime
+        if datetime_diff > datetime.timedelta(seconds = UNACTIVE_SECONDS_THREASHOLD):
+            self.logger.debug("observed unactive %s seconds, so quit." %
+                              UNACTIVE_SECONDS_THREASHOLD)
+            #sys.exit()
+            sock.close()
+ 
+        t = Timer(10, self.kick_activity_check)
+        t.start()              
+    """
+
 # main
     @classmethod
     def get_cookie_container(cls, mail, password):
@@ -182,6 +206,7 @@ class NicoLive(object):
         # main loop
         # self.schedule_stream_stat_timer()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(SOCKET_TIMEOUT)
         sock.connect((host, port))
         sock.sendall(('<thread thread="%s" version="20061206" res_form="-1"/>'
                       + chr(0)) % thread)
@@ -189,7 +214,11 @@ class NicoLive(object):
         self.logger.debug("*** started receiving live, lv" + self.live_id)
         msg = ""
         while True:
-            rcvmsg = sock.recv(1024)
+            try:
+                rcvmsg = sock.recv(1024)
+            except socket.timeout, e:
+                self.logger.debug("detected sock.recv timeout.")
+                break
             disconnected = False
 
             for ch in rcvmsg:
@@ -215,7 +244,8 @@ class NicoLive(object):
                             # self.logger.debug(etree.tostring(chat))
                             user_id = chat.attrib.get('user_id')
                             comment = chat.text
-                            self.logger.debug("user_id: %s comment: %s" % (user_id, comment))
+                            self.logger.debug("live_id: %s user_id: %s comment: %s" %
+                                              (self.live_id, user_id, comment))
                             # thread_id = res_data.xpath("//chat/@thread")[0]
                             thread_id = res_data.xpath("//chats/chat/@thread")[0]
                             if comment == NicoLive.last_comment:
@@ -239,6 +269,8 @@ class NicoLive(object):
                                 break
                     except KeyError:
                         self.logger.debug("received unrecognized data.")
+
+                    self.last_active_datetime = datetime.datetime.now()
                     msg = ""
                 else:
                     msg += ch
@@ -249,6 +281,9 @@ class NicoLive(object):
         self.logger.debug("*** finished live, lv%s comments: %s" % (self.live_id, self.comment_count))
 
     def open_comment_server(self):
+        # TODO: delete this later
+        # self.kick_activity_check()
+
         try:
             (community_name, live_name) = self.get_stream_info(self.live_id)
         except Exception, e:
@@ -278,8 +313,7 @@ class NicoLive(object):
 
 
 if __name__ == "__main__":
-    dummylogger = DummyLogger()
-    dummybackgate = DummyBackgate(dummylogger)
+    logging.config.fileConfig(NICOCOMMENT_CONFIG)
 
-    nicolive = NicoLive(dummybackgate, sys.argv[1], sys.argv[2], 0, sys.argv[3])
+    nicolive = NicoLive(sys.argv[1], sys.argv[2], 0, sys.argv[3])
     nicolive.open_comment_server()
