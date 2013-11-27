@@ -53,8 +53,6 @@ class NicoLive(object):
         self.community_id = community_id
         self.live_id = live_id
         self.comment_count = 0
-        # TODO: delete this later
-        # self.last_active_datetime = datetime.datetime.now()
 
         (self.force_debug_tweet, self.monitoring_user_ids) = self.get_config()
         # self.logger.debug("monitoring_user_ids: %s" % self.monitoring_user_ids)
@@ -125,25 +123,6 @@ class NicoLive(object):
             print u'error in post.'
             print error
 
-# utility
-    # TODO: delete this later
-    """
-    def kick_activity_check(self):
-        self.logger.debug("activity check kicked, last active datetime: %s" %
-                          self.last_active_datetime)
-
-        UNACTIVE_SECONDS_THREASHOLD = 10
-        datetime_diff = datetime.datetime.now() - self.last_active_datetime
-        if datetime_diff > datetime.timedelta(seconds = UNACTIVE_SECONDS_THREASHOLD):
-            self.logger.debug("observed unactive %s seconds, so quit." %
-                              UNACTIVE_SECONDS_THREASHOLD)
-            #sys.exit()
-            sock.close()
- 
-        t = Timer(10, self.kick_activity_check)
-        t.start()              
-    """
-
 # main
     @classmethod
     def get_cookie_container(cls, mail, password):
@@ -212,32 +191,32 @@ class NicoLive(object):
                       + chr(0)) % thread)
 
         self.logger.debug("*** started receiving live, lv" + self.live_id)
-        msg = ""
+        message = ""
         while True:
             try:
-                rcvmsg = sock.recv(1024)
+                recved = sock.recv(1024)
             except socket.timeout, e:
-                self.logger.debug("detected sock.recv timeout.")
+                self.logger.debug("detected timeout at socket recv().")
                 break
             disconnected = False
 
-            for ch in rcvmsg:
-                if ch == chr(0):
-                    # wrap msg using dummy "chats" tag to avoid parse error
-                    msg = "<chats>" + msg + "</chats>"
-                    # self.logger.debug("xml: %s" % msg)
+            for character in recved:
+                if character == chr(0):
+                    # wrap message using dummy "chats" tag to avoid parse error
+                    message = "<chats>" + message + "</chats>"
+                    # self.logger.debug("xml: %s" % message)
 
                     try:
-                        # res_data = xml.fromstring(msg)
-                        res_data = etree.fromstring(msg)
+                        # res_data = xml.fromstring(message)
+                        res_data = etree.fromstring(message)
                     except etree.XMLSyntaxError, e:
                         self.logger.debug("nicolive xml parse error: %s" % e)
-                        self.logger.debug("xml: %s" % msg)
+                        self.logger.debug("xml: %s" % message)
 
                     try:
                         chats = res_data.xpath("//chats/chat")
                         if 1 < len(chats):
-                            # self.logger.debug("xml: %s" % msg)
+                            # self.logger.debug("xml: %s" % message)
                             pass
 
                         for chat in chats:
@@ -269,21 +248,16 @@ class NicoLive(object):
                                 break
                     except KeyError:
                         self.logger.debug("received unrecognized data.")
-
-                    self.last_active_datetime = datetime.datetime.now()
-                    msg = ""
+                    message = ""
                 else:
-                    msg += ch
-            if rcvmsg == '' or disconnected:
+                    message += character
+            if recved == '' or disconnected:
                 # print "break"
                 break
         # self.logger.debug("%s, (socket closed.)" % self.live_id)
         self.logger.debug("*** finished live, lv%s comments: %s" % (self.live_id, self.comment_count))
 
     def open_comment_server(self):
-        # TODO: delete this later
-        # self.kick_activity_check()
-
         try:
             (community_name, live_name) = self.get_stream_info(self.live_id)
         except Exception, e:
