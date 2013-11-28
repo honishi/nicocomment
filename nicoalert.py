@@ -22,10 +22,12 @@ NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.
 ANTENNA_URL = 'https://secure.nicovideo.jp/secure/login?site=nicolive_antenna'
 GET_ALERT_STATUS_URL = 'http://live.nicovideo.jp/api/getalertstatus'
 
+
 class NicoAlert(object):
 # object lifecycle
     def __init__(self):
-        self.logger = logging.getLogger()                     
+        self.logger = logging.getLogger()
+        self.received_live_count = 0
 
         (self.mail, self.password) = self.get_config()
         self.logger.debug("mail: %s password: %s" % (self.mail, self.password))
@@ -107,6 +109,7 @@ class NicoAlert(object):
         # main loop
         # self.schedule_stream_stat_timer()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(60)
         sock.connect((host, port))
         sock.sendall(('<thread thread="%s" version="20061206" res_form="-1"/>'
                       + chr(0)) % thread)
@@ -134,7 +137,7 @@ class NicoAlert(object):
                                 # self.logger.debug(etree.tostring(chat[0]))
                                 live_info = chat.text
                                 # self.logger.debug(live_info)
-                                
+
                                 # value = "102351738,官邸前抗議の首都圏反原発連合と 脱原発を…"
                                 # value = "102373563,co1299695,7169359"
                                 lives = live_info.split(',')
@@ -142,22 +145,23 @@ class NicoAlert(object):
                                 if len(lives) == 3:
                                     # the stream is NOT the official one
                                     live_id, community_id, user_id = lives
-                                    # self.logger.debug(
-                                    #    "stream_id: %s community_id: %s user_id: %s" %
-                                    #    (stream_id, community_id, user_id))
+                                    self.logger.debug("received alert, live_id: %s "
+                                                      "community_id: %s user_id: %s" %
+                                                      (live_id, community_id, user_id))
 
                                     handler(live_id, community_id, user_id)
-
+                                    self.received_live_count += 1
                     except KeyError:
                         self.logger.debug("received unknown information.")
                     msg = ""
                 else:
                     msg += ch
+        self.logger.debug("!!! encountered unexpected alert recv() end... !!!")
 
     def handle_live(self, live_id, community_id, user_id):
         # self.logger.debug("*** live started: %s" % live_id)
         live = nicolive.NicoLive(self.mail, self.password, community_id, live_id)
-        p = Thread(target=live.open_comment_server, args=())
+        p = Thread(target=live.start, args=())
         p.start()
 
     def start(self):
@@ -167,8 +171,9 @@ class NicoAlert(object):
 
     def log_statistics(self):
         self.logger.debug(
-            "active live thread: %s, total comment count: %s" %
-            (threading.active_count(), nicolive.NicoLive.total_comment_count))
+            "*** received lives: %s active live threads: %s, total comments: %s" %
+            (self.received_live_count,
+             threading.active_count(), nicolive.NicoLive.total_comment_count))
 
         t = Timer(10, self.log_statistics)
         t.start()

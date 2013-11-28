@@ -20,6 +20,7 @@ import tweepy
 
 from nicoerror import UnexpectedStatusError
 
+COOKIE_CONTAINER_INITILIZATION_SLEEP_TIME = 3
 SOCKET_TIMEOUT = 60 * 30
 
 COOKIE_CONTAINER_NOT_INITIALIZED = 0
@@ -35,6 +36,11 @@ GET_PLAYER_STATUS_URL = "http://watch.live.nicovideo.jp/api/getplayerstatus?v=lv
 DEBUG_LOG_COMMENT = False
 
 LIVE_URL = "http://live.nicovideo.jp/watch/lv"
+
+COMMENT_SERVER_HOST_NUMBER_FIRST = 101
+COMMENT_SERVER_HOST_NUMBER_LAST = 104
+COMMENT_SERVER_PORT_FIRST = 2805
+COMMENT_SERVER_PORT_LAST = 2814
 
 
 class NicoLive(object):
@@ -111,17 +117,31 @@ class NicoLive(object):
 
 # twitter
     def update_twitter_status(self, user_id, comment):
+        try:
+            self.last_status_update_user_id
+            self.last_status_update_comment
+        except AttributeError:
+            self.last_status_update_user_id = None
+            self.last_status_update_comment = None
+
         auth = tweepy.OAuthHandler(self.consumer_key[user_id], self.consumer_secret[user_id])
         auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
-        status = "[%s]\n%s\n%s%s".encode('UTF-8') % (self.header_text[user_id],
-                                       comment.encode('UTF-8'),
-                                       LIVE_URL,
-                                       self.live_id)
-        try:
-            tweepy.API(auth).update_status(status)
-        except tweepy.error.TweepError, error:
-            print u'error in post.'
-            print error
+        status = "[%s]\n%s\n%s%s".encode('UTF-8') % (
+            self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, self.live_id)
+
+        if (user_id == self.last_status_update_user_id and
+                comment == self.last_status_update_comment):
+            # duplicated tweet. skip
+            pass
+        else:
+            try:
+                tweepy.API(auth).update_status(status)
+            except tweepy.error.TweepError, error:
+                self.logger.debug("error in post, user_id: %s comment: %s error_response: %s" %
+                                  (user_id, comment, error))
+
+        self.last_status_update_user_id = user_id
+        self.last_status_update_comment = comment
 
 # main
     @classmethod
@@ -139,7 +159,7 @@ class NicoLive(object):
 
             cls.cookie_container = opener
             cls.cookie_container_status = COOKIE_CONTAINER_INITIALIZED
-            print "opened"
+            print "cookie container opened"
 
         return cls.cookie_container
 
@@ -174,12 +194,45 @@ class NicoLive(object):
             code = res_data.xpath("//getplayerstatus/error/code")[0].text
             raise UnexpectedStatusError(status, code)
 
+        room_label = res_data.xpath("//getplayerstatus/user/room_label")[0].text
+
         host = res_data.xpath("//getplayerstatus/ms/addr")[0].text
         port = int(res_data.xpath("//getplayerstatus/ms/port")[0].text)
-        thread = res_data.xpath("//getplayerstatus/ms/thread")[0].text
-        # self.logger.debug("host: %s port: %s thread: %s" % (host, port, thread))
+        thread = int(res_data.xpath("//getplayerstatus/ms/thread")[0].text)
 
-        return host, port, thread
+        self.logger.debug("*** getplayerstatus, live_id: %s room_label: %s "
+                          "host: %s port: %s thread: %s" %
+                          (live_id, room_label, host, port, thread))
+        return room_label, host, port, thread
+
+    def get_comment_servers(self, room_label, host, port, thread):
+        comment_servers = []
+
+        matched_room = re.match('co\d+', room_label)
+        if not matched_room:
+            # assigned room is not ARENA, not supported for now
+            return comment_servers
+
+        matched_host_number = re.match('(msg)(\d+)(\..+)', host)
+        if not matched_host_number:
+            return comment_servers
+        host_prefix = matched_host_number.group(1)
+        host_number = int(matched_host_number.group(2))
+        host_surfix = matched_host_number.group(3)
+
+        for i in xrange(4):
+            comment_servers.append((host_prefix + str(host_number) + host_surfix, port, thread))
+            if port == COMMENT_SERVER_PORT_LAST:
+                port = COMMENT_SERVER_PORT_FIRST
+                if host_number == COMMENT_SERVER_HOST_NUMBER_LAST:
+                    host_number = COMMENT_SERVER_HOST_NUMBER_FIRST
+                else:
+                    host_number += 1
+            else:
+                port += 1
+            thread += 1
+
+        return comment_servers
 
     def connect_to_server(self, host, port, thread):
         # main loop
@@ -190,7 +243,8 @@ class NicoLive(object):
         sock.sendall(('<thread thread="%s" version="20061206" res_form="-1"/>'
                       + chr(0)) % thread)
 
-        self.logger.debug("*** started receiving live, lv" + self.live_id)
+        self.logger.debug("*** opened live thread, lv: %s server: %s,%s,%s" %
+                          (self.live_id, host, port, thread))
         message = ""
         while True:
             try:
@@ -198,23 +252,33 @@ class NicoLive(object):
             except socket.timeout, e:
                 self.logger.debug("detected timeout at socket recv().")
                 break
-            disconnected = False
+            should_close_connection = False
 
             for character in recved:
                 if character == chr(0):
-                    # wrap message using dummy "chats" tag to avoid parse error
-                    message = "<chats>" + message + "</chats>"
-                    # self.logger.debug("xml: %s" % message)
+                    # self.logger.debug("live_id: %s server: %s,%s,%s xml: %s" %
+                    #                   (self.live_id, host, port, thread, message))
+                    # wrap message using dummy "elements" tag to avoid parse error
+                    message = "<elements>" + message + "</elements>"
 
                     try:
-                        # res_data = xml.fromstring(message)
                         res_data = etree.fromstring(message)
                     except etree.XMLSyntaxError, e:
                         self.logger.debug("nicolive xml parse error: %s" % e)
                         self.logger.debug("xml: %s" % message)
 
                     try:
-                        chats = res_data.xpath("//chats/chat")
+                        thread_elem = res_data.xpath("//elements/thread")
+                        if 0 < len(thread_elem):
+                            # self.logger.debug("live_id: %s server: %s,%s,%s xml: %s" %
+                            #                   (self.live_id, host, port, thread, message))
+                            result_code = thread_elem[0].attrib.get('resultcode')
+                            if result_code == "1":
+                                # no comments will be provided from this thread
+                                should_close_connection = True
+                                break
+
+                        chats = res_data.xpath("//elements/chat")
                         if 1 < len(chats):
                             # self.logger.debug("xml: %s" % message)
                             pass
@@ -223,10 +287,11 @@ class NicoLive(object):
                             # self.logger.debug(etree.tostring(chat))
                             user_id = chat.attrib.get('user_id')
                             comment = chat.text
-                            self.logger.debug("live_id: %s user_id: %s comment: %s" %
-                                              (self.live_id, user_id, comment))
-                            # thread_id = res_data.xpath("//chat/@thread")[0]
-                            thread_id = res_data.xpath("//chats/chat/@thread")[0]
+                            """
+                            self.logger.debug(
+                                "live_id: %s server: %s,%s,%s user_id: %s comment: %s" %
+                                (self.live_id, host, port, thread, user_id, comment))
+                            """
                             if comment == NicoLive.last_comment:
                                 continue
                             NicoLive.last_comment = comment
@@ -239,25 +304,27 @@ class NicoLive(object):
                                 if user_id == monitoring_user_id:
                                     self.update_twitter_status(user_id, comment)
                                 if self.force_debug_tweet:
-                                    disconnected = True
+                                    should_close_connection = True
                                     break
 
                             if comment == "/disconnect":
-                                # print "disconnect break"
-                                disconnected = True
+                                # self.logger.debug("disconnect break")
+                                should_close_connection = True
                                 break
                     except KeyError:
                         self.logger.debug("received unrecognized data.")
                     message = ""
                 else:
                     message += character
-            if recved == '' or disconnected:
-                # print "break"
+            if recved == '' or should_close_connection:
+                # self.logger.debug("break")
                 break
         # self.logger.debug("%s, (socket closed.)" % self.live_id)
-        self.logger.debug("*** finished live, lv%s comments: %s" % (self.live_id, self.comment_count))
+        self.logger.debug("*** closed live thread, lv: %s server: %s,%s,%s comments: %s" %
+                          (self.live_id, host, port, thread, self.comment_count))
 
-    def open_comment_server(self):
+# public method
+    def start(self):
         try:
             (community_name, live_name) = self.get_stream_info(self.live_id)
         except Exception, e:
@@ -266,28 +333,49 @@ class NicoLive(object):
             pass
 
         if NicoLive.cookie_container_status == COOKIE_CONTAINER_INITIALIZING:
-            time.sleep(3)
+            time.sleep(COOKIE_CONTAINER_INITILIZATION_SLEEP_TIME)
         cookie_container = self.get_cookie_container(self.mail, self.password)
 
-        (host, port, thread) = (None, None, None)
+        (room_label, host, port, thread) = (None, None, None, None)
         try:
-            (host, port, thread) = self.get_player_status(cookie_container, self.live_id)
+            (room_label, host, port, thread) = self.get_player_status(
+                cookie_container, self.live_id)
         except UnexpectedStatusError, e:
-            self.logger.debug("could not get player status: %s" % e)
-            if e.code not in ["notfound", "require_community_member"]:
+            if e.code in ["notfound", "require_community_member"]:
+                self.logger.debug("caught 'expected' error, so quit: %s" % e)
+                # exit
+            else:
+                self.logger.debug("caught 'unexpected' error, so try to clear session: %s" % e)
+                # TODO: improve logic
+                # possible case of session expiration, so try again
                 NicoLive.cookie_container = None
                 try:
                     cookie_container = self.get_cookie_container(self.mail, self.password)
-                    (host, port, thread) = self.get_player_status(cookie_container, self.live_id)
+                    (room_label, host, port, thread) = self.get_player_status(
+                        cookie_container, self.live_id)
                 except UnexpectedStatusError, e:
                     self.logger.debug("again: could not get player status: %s" % e)
 
-        if host is not None and port is not None and thread is not None:
-            self.connect_to_server(host, port, thread)
+        if (room_label is not None and
+                host is not None and port is not None and thread is not None):
+            comment_servers = self.get_comment_servers(room_label, host, port, thread)
+            # self.logger.debug("comment servers: %s" % comment_servers)
+
+            for (host, port, thread) in comment_servers:
+                t = Thread(target=self.connect_to_server, args=(host, port, thread))
+                t.start()
 
 
 if __name__ == "__main__":
     logging.config.fileConfig(NICOCOMMENT_CONFIG)
 
     nicolive = NicoLive(sys.argv[1], sys.argv[2], 0, sys.argv[3])
-    nicolive.open_comment_server()
+    nicolive.start()
+
+    """
+    nicolive = NicoLive("mail", "pass", 0, 123)
+    nicolive.update_twitter_status("784552", u"日本語")
+    nicolive.update_twitter_status("784552", u"日本語")
+    nicolive.update_twitter_status("784552", u"abc")
+    nicolive.update_twitter_status("784552", u"日本語")
+    """
