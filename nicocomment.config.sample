@@ -1,0 +1,48 @@
+[nicocomment]
+# no configurable parameters in this section
+
+[nicoalert]
+mail = mail@example.com
+password = p@ssword
+
+[nicolive]
+# force_debug_tweet = true
+force_debug_tweet = false
+monitoring_user_ids = 12345
+
+[12345]
+header_text = xxxxx監視中
+# @twitter_account
+consumer_key = xxxxxxxxxx
+consumer_secret = xxxxxxxxxx
+access_key = xxxxxxxxxx
+access_secret = xxxxxxxxxx
+
+[loggers]
+keys=root
+
+[logger_root]
+level=NOTSET
+handlers=stdout
+
+[handlers]
+keys=stdout
+
+[handler_stdout]
+class=StreamHandler
+level=NOTSET
+formatter=default
+args=(sys.stdout,)
+
+[handler_file]
+class=FileHandler
+level=NOTSET
+formatter=default
+args=("log/nicocomment.log",'a')
+
+[formatters]
+keys=default
+
+[formatter_default]
+format=[%(asctime)s] [%(levelname)s] %(message)s
+datefmt=

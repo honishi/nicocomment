@@ -5,3 +5,5 @@ log/*.log
 
 nicocomment.config*
 !nicocomment.config.sample
+nicocomment.env*
+!nicocomment.env.sample

@@ -6,7 +6,6 @@ import sys
 import ConfigParser
 import logging
 import logging.config
-import datetime
 import urllib2
 import socket
 from threading import Thread
@@ -14,7 +13,6 @@ from threading import Timer
 from lxml import etree
 import time
 import re
-import unicodedata
 import cookielib
 import tweepy
 
@@ -48,8 +46,7 @@ class NicoLive(object):
     logger = None
     cookie_container_status = COOKIE_CONTAINER_NOT_INITIALIZED
     cookie_container = None
-    total_comment_count = 0
-    last_comment = ""
+    sum_total_comment_count = 0
 
 # object life cycle
     def __init__(self, mail, password, community_id, live_id):
@@ -59,6 +56,7 @@ class NicoLive(object):
         self.community_id = community_id
         self.live_id = live_id
         self.comment_count = 0
+        self.last_comment = ""
 
         (self.force_debug_tweet, self.monitoring_user_ids) = self.get_config()
         # self.logger.debug("monitoring_user_ids: %s" % self.monitoring_user_ids)
@@ -82,7 +80,10 @@ class NicoLive(object):
                 "access_key: %s access_secret: ***" % self.access_key[user_id])
             """
 
+        # self.logger.debug("*** __init__ nicolive, live: %s" % self.live_id)
+
     def __del__(self):
+        # self.logger.debug("*** __del__ nicolive, live: %s" % self.live_id)
         pass
 
 # config
@@ -105,7 +106,7 @@ class NicoLive(object):
     def get_twitter_credentials(self, user_id):
         config = ConfigParser.ConfigParser()
         config.read(NICOCOMMENT_CONFIG)
-        section = "twitter-" + user_id
+        section = user_id
 
         header_text = config.get(section, "header_text")
         consumer_key = config.get(section, "consumer_key")
@@ -166,14 +167,14 @@ class NicoLive(object):
     def get_stream_info(self, live_id):
         res = urllib2.urlopen(GET_STREAM_INFO_URL + live_id)
         xml = res.read()
-        res_data = etree.fromstring(xml)
-        # self.logger.debug(etree.tostring(res_data))
+        element = etree.fromstring(xml)
+        # self.logger.debug(etree.tostring(element))
 
-        status = res_data.xpath("//getstreaminfo")[0].attrib["status"]
+        status = element.xpath("//getstreaminfo")[0].attrib["status"]
         # status = "fail"
         if status == "ok":
-            community_name = res_data.xpath("//getstreaminfo/communityinfo/name")[0].text
-            live_name = res_data.xpath("//getstreaminfo/streaminfo/title")[0].text
+            community_name = element.xpath("//getstreaminfo/communityinfo/name")[0].text
+            live_name = element.xpath("//getstreaminfo/streaminfo/title")[0].text
             # set "n/a", when no value provided; like <title/>
             if community_name is None:
                 community_name = "n/a"
@@ -187,18 +188,18 @@ class NicoLive(object):
     def get_player_status(self, cookie_container, live_id):
         res = cookie_container.open(GET_PLAYER_STATUS_URL + live_id)
 
-        res_data = etree.fromstring(res.read())
-        # self.logger.debug(etree.tostring(res_data))
-        status = res_data.xpath("//getplayerstatus")[0].attrib["status"]
+        element = etree.fromstring(res.read())
+        # self.logger.debug(etree.tostring(element))
+        status = element.xpath("//getplayerstatus")[0].attrib["status"]
         if status != 'ok':
-            code = res_data.xpath("//getplayerstatus/error/code")[0].text
+            code = element.xpath("//getplayerstatus/error/code")[0].text
             raise UnexpectedStatusError(status, code)
 
-        room_label = res_data.xpath("//getplayerstatus/user/room_label")[0].text
+        room_label = element.xpath("//getplayerstatus/user/room_label")[0].text
 
-        host = res_data.xpath("//getplayerstatus/ms/addr")[0].text
-        port = int(res_data.xpath("//getplayerstatus/ms/port")[0].text)
-        thread = int(res_data.xpath("//getplayerstatus/ms/thread")[0].text)
+        host = element.xpath("//getplayerstatus/ms/addr")[0].text
+        port = int(element.xpath("//getplayerstatus/ms/port")[0].text)
+        thread = int(element.xpath("//getplayerstatus/ms/thread")[0].text)
 
         self.logger.debug("*** getplayerstatus, live_id: %s room_label: %s "
                           "host: %s port: %s thread: %s" %
@@ -247,24 +248,27 @@ class NicoLive(object):
         return (host_prefix + str(host_number) + host_surfix, port, thread)
 
     def get_comment_servers(self, room_label, host, port, thread):
-        self.logger.debug("original server, room_label: %s host: %s port: %s thread: %s" %
-                          (room_label, host, port, thread))
+        """
+        self.logger.debug(
+            "provided comment server, room_label: %s host: %s port: %s thread: %s" %
+            (room_label, host, port, thread))
+        """
         comment_servers = []
 
         matched_room = re.match('co\d+', room_label)
         if matched_room:
             # arena
-            self.logger.debug("no need to adjust the room")
+            # self.logger.debug("no need to adjust the room")
             pass
         else:
-            matched_room = re.match('立ち見(\w)列', room_label)
+            matched_room = re.match(u'立ち見(\w)列', room_label)
             if matched_room:
                 # stand A, B, C. host, port, thread should be adjusted
                 stand_type = matched_room.group(1)
                 (host, port, thread) = self.get_arena_comment_server(
                     stand_type, host, port, thread)
-                self.logger.debug("adjusted arena server, host: %s port: %s thread: %s" %
-                                  (host, port, thread))
+                # self.logger.debug("adjusted arena server, host: %s port: %s thread: %s" %
+                #                   (host, port, thread))
             else:
                 # channel live? not supported for now
                 self.logger.debug("live is not user live, so skip")
@@ -316,55 +320,65 @@ class NicoLive(object):
                     message = "<elements>" + message + "</elements>"
 
                     try:
-                        res_data = etree.fromstring(message)
+                        element = etree.fromstring(message)
                     except etree.XMLSyntaxError, e:
                         self.logger.debug("nicolive xml parse error: %s" % e)
                         self.logger.debug("xml: %s" % message)
 
                     try:
-                        thread_elem = res_data.xpath("//elements/thread")
-                        if 0 < len(thread_elem):
+                        thread_element = element.xpath("//elements/thread")
+                        if 0 < len(thread_element):
                             # self.logger.debug("live_id: %s server: %s,%s,%s xml: %s" %
                             #                   (self.live_id, host, port, thread, message))
-                            result_code = thread_elem[0].attrib.get('resultcode')
+                            result_code = thread_element[0].attrib.get('resultcode')
                             if result_code == "1":
                                 # no comments will be provided from this thread
                                 should_close_connection = True
                                 break
+                        else:
+                            chats = element.xpath("//elements/chat")
+                            if 1 < len(chats):
+                                # self.logger.debug("xml: %s" % message)
+                                pass
+                            for chat in chats:
+                                # self.logger.debug(etree.tostring(chat))
+                                user_id = chat.attrib.get('user_id')
+                                premium = chat.attrib.get('premium')
+                                if premium is None:
+                                    premium = "0"
+                                comment = chat.text
+                                """
+                                self.logger.debug(
+                                    "live_id: %s server: %s,%s,%s user_id: %s comment: %s" %
+                                    (self.live_id, host, port, thread, user_id, comment))
+                                """
+                                if comment == self.last_comment:
+                                    continue
+                                self.last_comment = comment
+                                self.comment_count += 1
 
-                        chats = res_data.xpath("//elements/chat")
-                        if 1 < len(chats):
-                            # self.logger.debug("xml: %s" % message)
-                            pass
+                                NicoLive.sum_total_comment_count += 1
 
-                        for chat in chats:
-                            # self.logger.debug(etree.tostring(chat))
-                            user_id = chat.attrib.get('user_id')
-                            comment = chat.text
-                            """
-                            self.logger.debug(
-                                "live_id: %s server: %s,%s,%s user_id: %s comment: %s" %
-                                (self.live_id, host, port, thread, user_id, comment))
-                            """
-                            if comment == NicoLive.last_comment:
-                                continue
-                            NicoLive.last_comment = comment
-                            NicoLive.total_comment_count += 1
-                            self.comment_count += 1
+                                for monitoring_user_id in self.monitoring_user_ids:
+                                    if self.force_debug_tweet:
+                                        user_id = monitoring_user_id
+                                    if user_id == monitoring_user_id:
+                                        self.update_twitter_status(user_id, comment)
+                                    if self.force_debug_tweet:
+                                        should_close_connection = True
+                                        break
 
-                            for monitoring_user_id in self.monitoring_user_ids:
-                                if self.force_debug_tweet:
-                                    user_id = monitoring_user_id
-                                if user_id == monitoring_user_id:
-                                    self.update_twitter_status(user_id, comment)
-                                if self.force_debug_tweet:
+                                if premium in ['2', '3'] and comment == "/disconnect":
+                                    # see the references below for details of the conbination of
+                                    # premium attribute value and disconnect command:
+                                    # - http://www.yukun.info/blog/2008/08/python-if-for-in.html 
+                                    # - https://twitter.com/Hemus_/status/6766945512
+                                    self.logger.debug(
+                                        "detected command: %s w/ premium: %s" %
+                                        (comment, premium))
+                                    # self.logger.debug("disconnect, xml: %s" % message)
                                     should_close_connection = True
                                     break
-
-                            if comment == "/disconnect":
-                                # self.logger.debug("disconnect break")
-                                should_close_connection = True
-                                break
                     except KeyError:
                         self.logger.debug("received unrecognized data.")
                     message = ""
@@ -381,10 +395,11 @@ class NicoLive(object):
     def start(self):
         try:
             (community_name, live_name) = self.get_stream_info(self.live_id)
+            self.logger.debug(
+                    "*** stream info, lv: %s community name: %s live name: %s" %
+                    (self.live_id, community_name, live_name))
         except Exception, e:
             self.logger.debug("could not get stream info: %s" % e)
-        else:
-            pass
 
         if NicoLive.cookie_container_status == COOKIE_CONTAINER_INITIALIZING:
             time.sleep(COOKIE_CONTAINER_INITILIZATION_SLEEP_TIME)
@@ -413,10 +428,11 @@ class NicoLive(object):
         if (room_label is not None and
                 host is not None and port is not None and thread is not None):
             comment_servers = self.get_comment_servers(room_label, host, port, thread)
-            self.logger.debug("comment servers: %s" % comment_servers)
+            # self.logger.debug("comment servers: %s" % comment_servers)
 
             for (host, port, thread) in comment_servers:
-                t = Thread(target=self.connect_to_server, args=(host, port, thread))
+                nicolive = NicoLive(self.mail, self.password, self.community_id, self.live_id)
+                t = Thread(target=nicolive.connect_to_server, args=(host, port, thread))
                 t.start()
 
 
@@ -438,11 +454,12 @@ if __name__ == "__main__":
 
     """
     nicolive = NicoLive("mail", "pass", 0, 123)
-    nicolive.get_comment_servers("co12345", "msg103.live.nicovideo.jp", 2808, 1314071859)
-    nicolive.get_comment_servers("立ち見A列", "msg103.live.nicovideo.jp", 2808, 1314071859)
-    nicolive.get_comment_servers("立ち見A列", "msg103.live.nicovideo.jp", 2805, 1314071859)
-    nicolive.get_comment_servers("立ち見A列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    nicolive.get_comment_servers("立ち見B列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    nicolive.get_comment_servers("立ち見C列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    nicolive.get_comment_servers("立ち見Z列", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    nicolive.get_comment_servers(u"co12345", "msg103.live.nicovideo.jp", 2808, 1314071859)
+    nicolive.get_comment_servers(u"立ち見A列", "msg103.live.nicovideo.jp", 2808, 1314071859)
+    nicolive.get_comment_servers(u"立ち見A列", "msg103.live.nicovideo.jp", 2805, 1314071859)
+    nicolive.get_comment_servers(u"立ち見A列", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    nicolive.get_comment_servers(u"立ち見B列", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    nicolive.get_comment_servers(u"立ち見C列", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    nicolive.get_comment_servers(u"立ち見Z列", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    nicolive.get_comment_servers(u"ch12345", "msg101.live.nicovideo.jp", 2805, 1314071859)
     """

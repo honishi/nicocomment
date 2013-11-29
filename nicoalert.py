@@ -171,9 +171,9 @@ class NicoAlert(object):
 
     def log_statistics(self):
         self.logger.debug(
-            "*** received lives: %s active live threads: %s, total comments: %s" %
+            "*** received lives: %s active live threads: %s sum total comments: %s" %
             (self.received_live_count,
-             threading.active_count(), nicolive.NicoLive.total_comment_count))
+             threading.active_count(), nicolive.NicoLive.sum_total_comment_count))
 
         t = Timer(10, self.log_statistics)
         t.start()
