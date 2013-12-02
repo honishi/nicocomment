@@ -396,6 +396,7 @@ class NicoLive(object):
 
 # public method
     def start(self):
+        """
         try:
             (community_name, live_name) = self.get_stream_info(self.live_id)
             self.logger.debug(
@@ -403,6 +404,7 @@ class NicoLive(object):
                 (self.live_id, community_name, live_name))
         except Exception, e:
             self.logger.debug("could not get stream info: %s" % e)
+        """
 
         if NicoLive.cookie_container_status == COOKIE_CONTAINER_INITIALIZING:
             time.sleep(COOKIE_CONTAINER_INITILIZATION_SLEEP_TIME)
