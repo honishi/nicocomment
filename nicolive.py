@@ -48,6 +48,9 @@ class NicoLive(object):
     cookie_container = None
     sum_total_comment_count = 0
 
+    last_status_update_user_id = None
+    last_status_update_status = None
+
 # object life cycle
     def __init__(self, mail, password, community_id, live_id):
         self.logger = logging.getLogger()
@@ -118,31 +121,29 @@ class NicoLive(object):
 
 # twitter
     def update_twitter_status(self, user_id, comment):
-        try:
-            self.last_status_update_user_id
-            self.last_status_update_comment
-        except AttributeError:
-            self.last_status_update_user_id = None
-            self.last_status_update_comment = None
-
         auth = tweepy.OAuthHandler(self.consumer_key[user_id], self.consumer_secret[user_id])
         auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
         status = "[%s]\n%s\n%s%s".encode('UTF-8') % (
             self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, self.live_id)
 
-        if (user_id == self.last_status_update_user_id and
-                comment == self.last_status_update_comment):
-            # duplicated tweet. skip
-            pass
+        if (user_id == NicoLive.last_status_update_user_id and
+                status == NicoLive.last_status_update_status):
+            self.logger.debug(
+                "skipped duplicate tweet, user_id: %s status: [%s]" % (user_id, status))
+            return
         else:
             try:
                 tweepy.API(auth).update_status(status)
             except tweepy.error.TweepError, error:
-                self.logger.debug("error in post, user_id: %s comment: %s error_response: %s" %
-                                  (user_id, comment, error))
+                # ("%s" % error) is unicode type; it's defined as TweepError.__str__ in
+                # tweepy/error.py. so we need to convert it to str type here.
+                # see http://bit.ly/jm5Zpc for details about string type conversion.
+                error_str = ("%s" % error).encode('UTF-8')
+                self.logger.debug("error in post, user_id: %s status: [%s] error_response: %s" %
+                                  (user_id, status, error_str))
 
-        self.last_status_update_user_id = user_id
-        self.last_status_update_comment = comment
+        NicoLive.last_status_update_user_id = user_id
+        NicoLive.last_status_update_status = status
 
 # main
     @classmethod
@@ -364,6 +365,8 @@ class NicoLive(object):
                                         user_id = monitoring_user_id
                                     if user_id == monitoring_user_id:
                                         self.update_twitter_status(user_id, comment)
+                                        # uncomment this to simulate duplicate tweet
+                                        # self.update_twitter_status(user_id, comment)
                                     if self.force_debug_tweet:
                                         should_close_connection = True
                                         break
@@ -371,7 +374,7 @@ class NicoLive(object):
                                 if premium in ['2', '3'] and comment == "/disconnect":
                                     # see the references below for details of the conbination of
                                     # premium attribute value and disconnect command:
-                                    # - http://www.yukun.info/blog/2008/08/python-if-for-in.html 
+                                    # - http://www.yukun.info/blog/2008/08/python-if-for-in.html
                                     # - https://twitter.com/Hemus_/status/6766945512
                                     self.logger.debug(
                                         "detected command: %s w/ premium: %s" %
@@ -396,8 +399,8 @@ class NicoLive(object):
         try:
             (community_name, live_name) = self.get_stream_info(self.live_id)
             self.logger.debug(
-                    "*** stream info, lv: %s community name: %s live name: %s" %
-                    (self.live_id, community_name, live_name))
+                "*** stream info, lv: %s community name: %s live name: %s" %
+                (self.live_id, community_name, live_name))
         except Exception, e:
             self.logger.debug("could not get stream info: %s" % e)
 
