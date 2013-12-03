@@ -10,7 +10,7 @@ sample
 requirements
 --
 - python 2.7.x
-    - versions except 2.7.x is not tested
+    - versions except 2.7.x are not tested
 
 setup
 --
@@ -51,7 +51,7 @@ honishi soft nproc 32768
 honishi hard nproc 32768
 ````
 
-restart and check the settings above are successfully configured.
+restart the box and check the settings above are successfully configured.
 ````
 $ sudo reboot
 $ ulimit -a
@@ -68,7 +68,7 @@ stop.
 ./nicocomment.sh stop
 ````
 
-monitoring
+monitoring example using crontab
 --
 see `nicocomment.sh` inside for the details of monitoring.
 
