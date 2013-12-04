@@ -8,8 +8,7 @@ import logging
 import logging.config
 import urllib2
 import socket
-from threading import Thread
-from threading import Timer
+import threading
 from lxml import etree
 import time
 import re
@@ -26,6 +25,7 @@ COOKIE_CONTAINER_INITIALIZING = 1
 COOKIE_CONTAINER_INITIALIZED = 2
 
 NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.config'
+LIVE_LOG_DIR = os.path.dirname(os.path.abspath(__file__)) + '/log/live'
 
 LOGIN_URL = "https://secure.nicovideo.jp/secure/login?site=niconico"
 GET_STREAM_INFO_URL = "http://live.nicovideo.jp/api/getstreaminfo/lv"
@@ -54,14 +54,17 @@ class NicoLive(object):
 # object life cycle
     def __init__(self, mail, password, community_id, live_id):
         self.logger = logging.getLogger()
+        self.log_file_obj = None
+
         self.mail = mail
         self.password = password
         self.community_id = community_id
         self.live_id = live_id
+
         self.comment_count = 0
         self.last_comment = ""
 
-        (self.force_debug_tweet, self.monitoring_user_ids) = self.get_config()
+        (self.force_debug_tweet, self.live_logging, self.monitoring_user_ids) = self.get_config()
         # self.logger.debug("monitoring_user_ids: %s" % self.monitoring_user_ids)
 
         self.header_text = {}
@@ -99,12 +102,17 @@ class NicoLive(object):
         else:
             force_debug_tweet = False
 
+        if config.get("nicolive", "live_logging").lower() == "true":
+            live_logging = True
+        else:
+            live_logging = False
+
         try:
             monitoring_user_ids = config.get("nicolive", "monitoring_user_ids").split(',')
         except ConfigParser.NoOptionError, unused_error:
             monitoring_user_ids = None
 
-        return force_debug_tweet, monitoring_user_ids
+        return force_debug_tweet, live_logging, monitoring_user_ids
 
     def get_twitter_credentials(self, user_id):
         config = ConfigParser.ConfigParser()
@@ -144,6 +152,35 @@ class NicoLive(object):
 
         NicoLive.last_status_update_user_id = user_id
         NicoLive.last_status_update_status = status
+
+# live log
+    def log_file_path_for_live_id(self, live_id):
+        sub_directory = live_id[len(live_id)-4:]
+        return LIVE_LOG_DIR + '/' + sub_directory + '/' + live_id + '.log'
+
+    def prepare_live_log_directory(self, live_id):
+        log_file_path = self.log_file_path_for_live_id(live_id)
+        directory = os.path.dirname(log_file_path)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            self.logger.debug("directory %s created." % directory)
+        else:
+            self.logger.debug("directory %s already existed." % directory)
+            pass
+
+    def open_live_log_file(self, live_id):
+        log_path = self.log_file_path_for_live_id(live_id)
+        if not os.path.exists(log_path):
+            self.prepare_live_log_directory(live_id)
+
+        file_obj = open(log_path, 'a')
+        self.logger.debug("opened live log file: %s" % log_path)
+
+        return file_obj
+
+    def log_live(self, message):
+        self.log_file_obj.write(message + "\n")
+        self.log_file_obj.flush()
 
 # main
     @classmethod
@@ -187,6 +224,8 @@ class NicoLive(object):
         return community_name, live_name
 
     def get_player_status(self, cookie_container, live_id):
+        # TODO: integrate retry logic here with start() method below. here, we should raise
+        # some exception rather than UnexpectedStatusError. and it should be handled in start().
         retry_count = 0
         while True:
             try:
@@ -196,11 +235,11 @@ class NicoLive(object):
                 self.logger.debug("error at get_player_status, lv: %s error: %s" % (live_id, e))
                 if retry_count < 5:
                     self.logger.debug("retry..., lv: %s retry count: %d" % (live_id, retry_count))
-                    time.sleep(1)
+                    time.sleep(2)
                 else:
                     self.logger.debug("retried over, quit.., lv: %s retry count: %d" %
                                       (live_id, retry_count))
-                    sys.exit()
+                    return
                 retry_count += 1
 
         element = etree.fromstring(res.read())
@@ -308,6 +347,9 @@ class NicoLive(object):
         return comment_servers
 
     def connect_to_server(self, host, port, thread):
+        if self.live_logging:
+            self.log_file_obj = self.open_live_log_file(self.live_id)
+
         # main loop
         # self.schedule_stream_stat_timer()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -329,6 +371,9 @@ class NicoLive(object):
 
             for character in recved:
                 if character == chr(0):
+                    if self.live_logging:
+                        self.log_live(message)
+
                     # self.logger.debug("live_id: %s server: %s,%s,%s xml: %s" %
                     #                   (self.live_id, host, port, thread, message))
                     # wrap message using dummy "elements" tag to avoid parse error
@@ -408,6 +453,9 @@ class NicoLive(object):
         self.logger.debug("*** closed live thread, lv: %s server: %s,%s,%s comments: %s" %
                           (self.live_id, host, port, thread, self.comment_count))
 
+        if self.live_logging:
+            self.log_file_obj.close()
+
 # public method
     def start(self):
         """
@@ -432,7 +480,10 @@ class NicoLive(object):
                     cookie_container, self.live_id)
                 break
             except UnexpectedStatusError, e:
-                if e.code in ["notfound", "require_community_member"]:
+                # possible error code list: http://looooooooop.blog35.fc2.com/blog-entry-1159.html
+                if e.code in ["notfound", "deletedbyuser", "deletedbyvisor",
+                              "violated", "usertimeshift", "comingsoon",
+                              "require_community_member", "closed", "noauth"]:
                     self.logger.debug("caught 'expected' error in get_player_status, "
                                       "so quit, lv: %s error: %s" % (self.live_id,  e))
                     break
@@ -460,7 +511,7 @@ class NicoLive(object):
 
             for (host, port, thread) in comment_servers:
                 nicolive = NicoLive(self.mail, self.password, self.community_id, self.live_id)
-                t = Thread(target=nicolive.connect_to_server, args=(host, port, thread))
+                t = threading.Thread(target=nicolive.connect_to_server, args=(host, port, thread))
                 t.start()
 
 

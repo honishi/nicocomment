@@ -8,6 +8,7 @@ password = p@ssword
 [nicolive]
 # force_debug_tweet = true
 force_debug_tweet = false
+live_logging = true
 monitoring_user_ids = 12345
 
 [12345]
