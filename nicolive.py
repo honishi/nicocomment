@@ -187,7 +187,21 @@ class NicoLive(object):
         return community_name, live_name
 
     def get_player_status(self, cookie_container, live_id):
-        res = cookie_container.open(GET_PLAYER_STATUS_URL + live_id)
+        retry_count = 0
+        while True:
+            try:
+                res = cookie_container.open(GET_PLAYER_STATUS_URL + live_id)
+                break
+            except Exception, e:
+                self.logger.debug("error at get_player_status, lv: %s error: %s" % (live_id, e))
+                if retry_count < 5:
+                    self.logger.debug("retry..., lv: %s retry count: %d" % (live_id, retry_count))
+                    time.sleep(1)
+                else:
+                    self.logger.debug("retried over, quit.., lv: %s retry count: %d" %
+                                      (live_id, retry_count))
+                    sys.exit()
+                retry_count += 1
 
         element = etree.fromstring(res.read())
         # self.logger.debug(etree.tostring(element))
@@ -411,24 +425,33 @@ class NicoLive(object):
         cookie_container = self.get_cookie_container(self.mail, self.password)
 
         (room_label, host, port, thread) = (None, None, None, None)
-        try:
-            (room_label, host, port, thread) = self.get_player_status(
-                cookie_container, self.live_id)
-        except UnexpectedStatusError, e:
-            if e.code in ["notfound", "require_community_member"]:
-                self.logger.debug("caught 'expected' error, so quit: %s" % e)
-                # exit
-            else:
-                self.logger.debug("caught 'unexpected' error, so try to clear session: %s" % e)
-                # TODO: improve logic
-                # possible case of session expiration, so try again
-                NicoLive.cookie_container = None
-                try:
-                    cookie_container = self.get_cookie_container(self.mail, self.password)
-                    (room_label, host, port, thread) = self.get_player_status(
-                        cookie_container, self.live_id)
-                except UnexpectedStatusError, e:
-                    self.logger.debug("again: could not get player status: %s" % e)
+        retry_count = 0
+        while True:
+            try:
+                (room_label, host, port, thread) = self.get_player_status(
+                    cookie_container, self.live_id)
+                break
+            except UnexpectedStatusError, e:
+                if e.code in ["notfound", "require_community_member"]:
+                    self.logger.debug("caught 'expected' error in get_player_status, "
+                                      "so quit, lv: %s error: %s" % (self.live_id,  e))
+                    break
+                else:
+                    # possible case of session expiration, so clearing container and retry
+                    self.logger.debug(
+                        "caught 'unexpected' error in get_player_status, lv: %s error: %s" %
+                        (self.live_id, e))
+                    if retry_count < 5:
+                        self.logger.debug(
+                            "retrying get_player_status..., lv: %s retry_count: %s" %
+                            (self.live_id, retry_count))
+                        NicoLive.cookie_container = None
+                    else:
+                        self.logger.debug(
+                            "retried over get_player_status..., lv: %s retry_count: %s" %
+                            (self.live_id, retry_count))
+                        break
+            retry_count += 1
 
         if (room_label is not None and
                 host is not None and port is not None and thread is not None):
