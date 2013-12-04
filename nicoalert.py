@@ -5,13 +5,13 @@ import os
 import ConfigParser
 import logging
 import logging.config
-import datetime
+# import datetime
 import urllib
 import urllib2
 import socket
 import threading
-from threading import Thread
-from threading import Timer
+# from threading import Thread
+# from threading import Timer
 from lxml import etree
 
 import nicoerror
@@ -160,9 +160,13 @@ class NicoAlert(object):
 
     def handle_live(self, live_id, community_id, user_id):
         # self.logger.debug("*** live started: %s" % live_id)
-        live = nicolive.NicoLive(self.mail, self.password, community_id, live_id)
-        p = Thread(target=live.start, args=())
-        p.start()
+        try:
+            live = nicolive.NicoLive()
+            p = threading.Thread(target=live.start,
+                                 args=(self.mail, self.password, community_id, live_id))
+            p.start()
+        except Exception, e:
+            self.logger.debug("error, failed to start live thread by alert, error: %s" % e)
 
     def start(self):
         ticket = self.get_ticket()
@@ -175,7 +179,7 @@ class NicoAlert(object):
             (self.received_live_count,
              threading.active_count(), nicolive.NicoLive.sum_total_comment_count))
 
-        t = Timer(10, self.log_statistics)
+        t = threading.Timer(10, self.log_statistics)
         t.start()
 
 

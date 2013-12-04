@@ -17,12 +17,12 @@ import tweepy
 
 from nicoerror import UnexpectedStatusError
 
-COOKIE_CONTAINER_INITILIZATION_SLEEP_TIME = 3
 SOCKET_TIMEOUT = 60 * 30
 
 COOKIE_CONTAINER_NOT_INITIALIZED = 0
 COOKIE_CONTAINER_INITIALIZING = 1
-COOKIE_CONTAINER_INITIALIZED = 2
+COOKIE_CONTAINER_FINISHED_TO_INITIALIZE = 2
+COOKIE_CONTAINER_FAILED_TO_INITIALIZE = 3
 
 NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.config'
 LIVE_LOG_DIR = os.path.dirname(os.path.abspath(__file__)) + '/log/live'
@@ -52,14 +52,9 @@ class NicoLive(object):
     last_status_update_status = None
 
 # object life cycle
-    def __init__(self, mail, password, community_id, live_id):
+    def __init__(self):
         self.logger = logging.getLogger()
         self.log_file_obj = None
-
-        self.mail = mail
-        self.password = password
-        self.community_id = community_id
-        self.live_id = live_id
 
         self.comment_count = 0
         self.last_comment = ""
@@ -86,10 +81,10 @@ class NicoLive(object):
                 "access_key: %s access_secret: ***" % self.access_key[user_id])
             """
 
-        # self.logger.debug("*** __init__ nicolive, live: %s" % self.live_id)
+        # self.logger.debug("*** nicolive __init__, %s" % threading.current_thread().ident)
 
     def __del__(self):
-        # self.logger.debug("*** __del__ nicolive, live: %s" % self.live_id)
+        # self.logger.debug("*** nicolive __del__, %s" % threading.current_thread().ident)
         pass
 
 # config
@@ -128,11 +123,11 @@ class NicoLive(object):
         return header_text, consumer_key, consumer_secret, access_key, access_secret
 
 # twitter
-    def update_twitter_status(self, user_id, comment):
+    def update_twitter_status(self, live_id, user_id, comment):
         auth = tweepy.OAuthHandler(self.consumer_key[user_id], self.consumer_secret[user_id])
         auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
         status = "[%s]\n%s\n%s%s".encode('UTF-8') % (
-            self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, self.live_id)
+            self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, live_id)
 
         if (user_id == NicoLive.last_status_update_user_id and
                 status == NicoLive.last_status_update_status):
@@ -161,12 +156,13 @@ class NicoLive(object):
     def prepare_live_log_directory(self, live_id):
         log_file_path = self.log_file_path_for_live_id(live_id)
         directory = os.path.dirname(log_file_path)
-        if not os.path.exists(directory):
+        try:
             os.makedirs(directory)
-            self.logger.debug("directory %s created." % directory)
-        else:
-            self.logger.debug("directory %s already existed." % directory)
+        except OSError, e:
+            # already existed
             pass
+        else:
+            self.logger.debug("directory %s created." % directory)
 
     def open_live_log_file(self, live_id):
         log_path = self.log_file_path_for_live_id(live_id)
@@ -185,20 +181,44 @@ class NicoLive(object):
 # main
     @classmethod
     def get_cookie_container(cls, mail, password):
+        retry_count = 0
+        while NicoLive.cookie_container_status == COOKIE_CONTAINER_INITIALIZING:
+            if retry_count < 60:
+                print "waiting for cookie container initiailzation by other thread..."
+                time.sleep(1)
+            else:
+                print "too many retries, aborting..."
+                NicoLive.cookie_container = None
+                NicoLive.cookie_container_status = COOKIE_CONTAINER_NOT_INITIALIZED
+                sys.exit()
+            retry_count += 1
+
         if cls.cookie_container is None:
             cls.cookie_container_status = COOKIE_CONTAINER_INITIALIZING
 
-            cookiejar = cookielib.CookieJar()
-            opener = urllib2.build_opener(
-                urllib2.HTTPCookieProcessor(cookiejar))
-            # self.logger.debug("finished setting up cookie library.")
-
-            opener.open(LOGIN_URL, "mail=%s&password=%s" % (mail, password))
-            # self.logger.debug("finished login.")
-
-            cls.cookie_container = opener
-            cls.cookie_container_status = COOKIE_CONTAINER_INITIALIZED
-            print "cookie container opened"
+            retry_count = 0
+            while True:
+                try:
+                    cookiejar = cookielib.CookieJar()
+                    opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookiejar))
+                    opener.open(LOGIN_URL, "mail=%s&password=%s" % (mail, password))
+                    cls.cookie_container = opener
+                except Exception, e:
+                    print "error in initializing cookie container, error: %s" % e
+                    if retry_count < 5:
+                        print ("retrying initializing cookie container, retry_count: %d" %
+                               retry_count)
+                        time.sleep(1)
+                    else:
+                        print ("retried over initializing cookie container, retry_count: %d" %
+                               retry_count)
+                        cls.cookie_container_status = COOKIE_CONTAINER_FAILED_TO_INITIALIZE
+                        break   # = return None
+                else:
+                    print "opened cookie container"
+                    cls.cookie_container_status = COOKIE_CONTAINER_FINISHED_TO_INITIALIZE
+                    break
+                retry_count += 1
 
         return cls.cookie_container
 
@@ -346,9 +366,9 @@ class NicoLive(object):
 
         return comment_servers
 
-    def connect_to_server(self, host, port, thread):
+    def open_comment_server(self, live_id, host, port, thread):
         if self.live_logging:
-            self.log_file_obj = self.open_live_log_file(self.live_id)
+            self.log_file_obj = self.open_live_log_file(live_id)
 
         # main loop
         # self.schedule_stream_stat_timer()
@@ -359,7 +379,7 @@ class NicoLive(object):
                       + chr(0)) % thread)
 
         self.logger.debug("*** opened live thread, lv: %s server: %s,%s,%s" %
-                          (self.live_id, host, port, thread))
+                          (live_id, host, port, thread))
         message = ""
         while True:
             try:
@@ -375,7 +395,7 @@ class NicoLive(object):
                         self.log_live(message)
 
                     # self.logger.debug("live_id: %s server: %s,%s,%s xml: %s" %
-                    #                   (self.live_id, host, port, thread, message))
+                    #                   (live_id, host, port, thread, message))
                     # wrap message using dummy "elements" tag to avoid parse error
                     message = "<elements>" + message + "</elements>"
 
@@ -389,7 +409,7 @@ class NicoLive(object):
                         thread_element = element.xpath("//elements/thread")
                         if 0 < len(thread_element):
                             # self.logger.debug("live_id: %s server: %s,%s,%s xml: %s" %
-                            #                   (self.live_id, host, port, thread, message))
+                            #                   (live_id, host, port, thread, message))
                             result_code = thread_element[0].attrib.get('resultcode')
                             if result_code == "1":
                                 # no comments will be provided from this thread
@@ -410,7 +430,7 @@ class NicoLive(object):
                                 """
                                 self.logger.debug(
                                     "live_id: %s server: %s,%s,%s user_id: %s comment: %s" %
-                                    (self.live_id, host, port, thread, user_id, comment))
+                                    (live_id, host, port, thread, user_id, comment))
                                 """
                                 if comment == self.last_comment:
                                     continue
@@ -423,9 +443,9 @@ class NicoLive(object):
                                     if self.force_debug_tweet:
                                         user_id = monitoring_user_id
                                     if user_id == monitoring_user_id:
-                                        self.update_twitter_status(user_id, comment)
+                                        self.update_twitter_status(live_id, user_id, comment)
                                         # uncomment this to simulate duplicate tweet
-                                        # self.update_twitter_status(user_id, comment)
+                                        # self.update_twitter_status(live_id, user_id, comment)
                                     if self.force_debug_tweet:
                                         should_close_connection = True
                                         break
@@ -449,58 +469,55 @@ class NicoLive(object):
             if recved == '' or should_close_connection:
                 # self.logger.debug("break")
                 break
-        # self.logger.debug("%s, (socket closed.)" % self.live_id)
+        # self.logger.debug("%s, (socket closed.)" % live_id)
         self.logger.debug("*** closed live thread, lv: %s server: %s,%s,%s comments: %s" %
-                          (self.live_id, host, port, thread, self.comment_count))
+                          (live_id, host, port, thread, self.comment_count))
 
         if self.live_logging:
             self.log_file_obj.close()
 
 # public method
-    def start(self):
+    def start(self, mail, password, community_id, live_id):
         """
         try:
-            (community_name, live_name) = self.get_stream_info(self.live_id)
+            (community_name, live_name) = self.get_stream_info(live_id)
             self.logger.debug(
                 "*** stream info, lv: %s community name: %s live name: %s" %
-                (self.live_id, community_name, live_name))
+                (live_id, community_name, live_name))
         except Exception, e:
             self.logger.debug("could not get stream info: %s" % e)
         """
 
-        if NicoLive.cookie_container_status == COOKIE_CONTAINER_INITIALIZING:
-            time.sleep(COOKIE_CONTAINER_INITILIZATION_SLEEP_TIME)
-        cookie_container = self.get_cookie_container(self.mail, self.password)
-
         (room_label, host, port, thread) = (None, None, None, None)
         retry_count = 0
         while True:
+            cookie_container = NicoLive.get_cookie_container(mail, password)
             try:
                 (room_label, host, port, thread) = self.get_player_status(
-                    cookie_container, self.live_id)
+                    cookie_container, live_id)
                 break
             except UnexpectedStatusError, e:
                 # possible error code list: http://looooooooop.blog35.fc2.com/blog-entry-1159.html
-                if e.code in ["notfound", "deletedbyuser", "deletedbyvisor",
-                              "violated", "usertimeshift", "comingsoon",
-                              "require_community_member", "closed", "noauth"]:
-                    self.logger.debug("caught 'expected' error in get_player_status, "
-                                      "so quit, lv: %s error: %s" % (self.live_id,  e))
+                if e.code in ["notfound", "deletedbyuser", "deletedbyvisor", "violated",
+                              "usertimeshift", "comingsoon", "require_community_member",
+                              "closed", "noauth"]:
+                    self.logger.debug("caught regular error in get_player_status, so quit, "
+                                      "lv: %s error: %s" % (live_id,  e))
                     break
                 else:
                     # possible case of session expiration, so clearing container and retry
                     self.logger.debug(
-                        "caught 'unexpected' error in get_player_status, lv: %s error: %s" %
-                        (self.live_id, e))
+                        "caught irregular error in get_player_status, lv: %s error: %s" %
+                        (live_id, e))
                     if retry_count < 5:
                         self.logger.debug(
                             "retrying get_player_status..., lv: %s retry_count: %s" %
-                            (self.live_id, retry_count))
+                            (live_id, retry_count))
                         NicoLive.cookie_container = None
                     else:
                         self.logger.debug(
                             "retried over get_player_status..., lv: %s retry_count: %s" %
-                            (self.live_id, retry_count))
+                            (live_id, retry_count))
                         break
             retry_count += 1
 
@@ -510,8 +527,9 @@ class NicoLive(object):
             # self.logger.debug("comment servers: %s" % comment_servers)
 
             for (host, port, thread) in comment_servers:
-                nicolive = NicoLive(self.mail, self.password, self.community_id, self.live_id)
-                t = threading.Thread(target=nicolive.connect_to_server, args=(host, port, thread))
+                nicolive = NicoLive()
+                t = threading.Thread(target=nicolive.open_comment_server,
+                                     args=(live_id, host, port, thread))
                 t.start()
 
 
@@ -519,20 +537,20 @@ if __name__ == "__main__":
     logging.config.fileConfig(NICOCOMMENT_CONFIG)
 
     # """
-    nicolive = NicoLive(sys.argv[1], sys.argv[2], 0, sys.argv[3])
-    nicolive.start()
+    nicolive = NicoLive()
+    nicolive.start(sys.argv[1], sys.argv[2], 0, sys.argv[3])
     # """
 
     """
-    nicolive = NicoLive("mail", "pass", 0, 123)
-    nicolive.update_twitter_status("784552", u"日本語")
-    nicolive.update_twitter_status("784552", u"日本語")
-    nicolive.update_twitter_status("784552", u"abc")
-    nicolive.update_twitter_status("784552", u"日本語")
+    nicolive = NicoLive()
+    nicolive.update_twitter_status(0, "784552", u"日本語")
+    nicolive.update_twitter_status(0, "784552", u"日本語")
+    nicolive.update_twitter_status(0, "784552", u"abc")
+    nicolive.update_twitter_status(0, "784552", u"日本語")
     """
 
     """
-    nicolive = NicoLive("mail", "pass", 0, 123)
+    nicolive = NicoLive()
     nicolive.get_comment_servers(u"co12345", "msg103.live.nicovideo.jp", 2808, 1314071859)
     nicolive.get_comment_servers(u"立ち見A列", "msg103.live.nicovideo.jp", 2808, 1314071859)
     nicolive.get_comment_servers(u"立ち見A列", "msg103.live.nicovideo.jp", 2805, 1314071859)
