@@ -43,7 +43,7 @@ COMMENT_SERVER_PORT_LAST = 2814
 
 class NicoLive(object):
 # class variables
-    logger = None
+    logger = logging.getLogger()
     cookie_container_status = COOKIE_CONTAINER_NOT_INITIALIZED
     cookie_container = None
     sum_total_comment_count = 0
@@ -124,8 +124,6 @@ class NicoLive(object):
 
 # twitter
     def update_twitter_status(self, live_id, user_id, comment):
-        auth = tweepy.OAuthHandler(self.consumer_key[user_id], self.consumer_secret[user_id])
-        auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
         status = "[%s]\n%s\n%s%s".encode('UTF-8') % (
             self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, live_id)
 
@@ -134,19 +132,24 @@ class NicoLive(object):
             self.logger.debug(
                 "skipped duplicate tweet, user_id: %s status: [%s]" % (user_id, status))
             return
-        else:
-            try:
-                tweepy.API(auth).update_status(status)
-            except tweepy.error.TweepError, error:
-                # ("%s" % error) is unicode type; it's defined as TweepError.__str__ in
-                # tweepy/error.py. so we need to convert it to str type here.
-                # see http://bit.ly/jm5Zpc for details about string type conversion.
-                error_str = ("%s" % error).encode('UTF-8')
-                self.logger.debug("error in post, user_id: %s status: [%s] error_response: %s" %
-                                  (user_id, status, error_str))
 
+        # the following 2 vars should be set here, instead of bottom of this method.
+        # because it takes some time to complete the tweepy's update_status() below,
+        # it causes duplicate tweet error, especially in case of back stage pass comment.
         NicoLive.last_status_update_user_id = user_id
         NicoLive.last_status_update_status = status
+
+        auth = tweepy.OAuthHandler(self.consumer_key[user_id], self.consumer_secret[user_id])
+        auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
+        try:
+            tweepy.API(auth).update_status(status)
+        except tweepy.error.TweepError, error:
+            # ("%s" % error) is unicode type; it's defined as TweepError.__str__ in
+            # tweepy/error.py. so we need to convert it to str type here.
+            # see http://bit.ly/jm5Zpc for details about string type conversion.
+            error_str = ("%s" % error).encode('UTF-8')
+            self.logger.debug("error in post, user_id: %s status: [%s] error_response: %s" %
+                              (user_id, status, error_str))
 
 # live log
     def log_file_path_for_live_id(self, live_id):
@@ -182,14 +185,14 @@ class NicoLive(object):
     @classmethod
     def get_cookie_container(cls, mail, password):
         retry_count = 0
-        while NicoLive.cookie_container_status == COOKIE_CONTAINER_INITIALIZING:
+        while cls.cookie_container_status == COOKIE_CONTAINER_INITIALIZING:
             if retry_count < 60:
-                print "waiting for cookie container initiailzation by other thread..."
+                cls.logger.debug("waiting for cookie container initiailzation by other thread...")
                 time.sleep(1)
             else:
-                print "too many retries, aborting..."
-                NicoLive.cookie_container = None
-                NicoLive.cookie_container_status = COOKIE_CONTAINER_NOT_INITIALIZED
+                cls.logger.debug("too many retries, aborting...")
+                cls.cookie_container = None
+                cls.cookie_container_status = COOKIE_CONTAINER_NOT_INITIALIZED
                 sys.exit()
             retry_count += 1
 
@@ -204,18 +207,20 @@ class NicoLive(object):
                     opener.open(LOGIN_URL, "mail=%s&password=%s" % (mail, password))
                     cls.cookie_container = opener
                 except Exception, e:
-                    print "error in initializing cookie container, error: %s" % e
+                    cls.logger.debug("error in initializing cookie container, error: %s" % e)
                     if retry_count < 5:
-                        print ("retrying initializing cookie container, retry_count: %d" %
-                               retry_count)
+                        cls.logger.debug(
+                            "retrying initializing cookie container, retry_count: %d" %
+                            retry_count)
                         time.sleep(1)
                     else:
-                        print ("retried over initializing cookie container, retry_count: %d" %
-                               retry_count)
+                        cls.logger.debug(
+                            "retried over initializing cookie container, retry_count: %d" %
+                            retry_count)
                         cls.cookie_container_status = COOKIE_CONTAINER_FAILED_TO_INITIALIZE
                         break   # = return None
                 else:
-                    print "opened cookie container"
+                    cls.logger.debug("opened cookie container")
                     cls.cookie_container_status = COOKIE_CONTAINER_FINISHED_TO_INITIALIZE
                     break
                 retry_count += 1
