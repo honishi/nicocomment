@@ -30,8 +30,8 @@ class NicoAlert(object):
         self.received_live_count = 0
 
         (self.mail, self.password) = self.get_config()
-        self.logger.debug("mail: %s password: %s" % (self.mail, self.password))
-        self.logger.debug("nicoalert initialized.")
+        self.logger.debug("mail: %s password: xxxxxxxxxx" % self.mail)
+        self.logger.info("nicoalert initialized.")
 
     def __del__(self):
         pass
@@ -128,7 +128,7 @@ class NicoAlert(object):
                         # 'thread'
                         thread = res_data.xpath("//thread")
                         if thread:
-                            self.logger.debug("started receiving live information.")
+                            self.logger.info("started receiving live information.")
 
                         # 'chat'
                         chats = res_data.xpath("//chat")
@@ -156,7 +156,7 @@ class NicoAlert(object):
                     msg = ""
                 else:
                     msg += ch
-        self.logger.debug("!!! encountered unexpected alert recv() end... !!!")
+        self.logger.error("encountered unexpected alert recv() end.")
 
     def handle_live(self, live_id, community_id, user_id):
         # self.logger.debug("*** live started: %s" % live_id)
@@ -166,7 +166,7 @@ class NicoAlert(object):
                                  args=(self.mail, self.password, community_id, live_id))
             p.start()
         except Exception, e:
-            self.logger.debug("error, failed to start live thread by alert, error: %s" % e)
+            self.logger.error("failed to start nicolive thread, error: %s" % e)
 
     def start(self):
         ticket = self.get_ticket()
@@ -174,7 +174,7 @@ class NicoAlert(object):
         self.listen_alert(host, port, thread, self.handle_live)
 
     def log_statistics(self):
-        self.logger.debug(
+        self.logger.info(
             "*** received lives: %s active live threads: %s sum total comments: %s" %
             (self.received_live_count,
              threading.active_count(), nicolive.NicoLive.sum_total_comment_count))

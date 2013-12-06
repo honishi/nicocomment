@@ -148,7 +148,7 @@ class NicoLive(object):
             # tweepy/error.py. so we need to convert it to str type here.
             # see http://bit.ly/jm5Zpc for details about string type conversion.
             error_str = ("%s" % error).encode('UTF-8')
-            self.logger.debug("error in post, user_id: %s status: [%s] error_response: %s" %
+            self.logger.error("error in post, user_id: %s status: [%s] error_response: %s" %
                               (user_id, status, error_str))
 
 # live log
@@ -190,7 +190,8 @@ class NicoLive(object):
                 cls.logger.debug("waiting for cookie container initiailzation by other thread...")
                 time.sleep(1)
             else:
-                cls.logger.debug("too many retries, aborting...")
+                cls.logger.error(
+                    "gave up waiting cookie container initialization by other thread, abort.")
                 cls.cookie_container = None
                 cls.cookie_container_status = COOKIE_CONTAINER_NOT_INITIALIZED
                 sys.exit()
@@ -207,15 +208,17 @@ class NicoLive(object):
                     opener.open(LOGIN_URL, "mail=%s&password=%s" % (mail, password))
                     cls.cookie_container = opener
                 except Exception, e:
-                    cls.logger.debug("error in initializing cookie container, error: %s" % e)
+                    cls.logger.warning(
+                        "possible network error when initializing cookie container, "
+                        "error: %s" % e)
                     if retry_count < 5:
                         cls.logger.debug(
-                            "retrying initializing cookie container, retry_count: %d" %
+                            "retrying cookie container initialization, retry count: %d" %
                             retry_count)
                         time.sleep(1)
                     else:
-                        cls.logger.debug(
-                            "retried over initializing cookie container, retry_count: %d" %
+                        cls.logger.error(
+                            "gave up retrying cookie container initialization, retry count: %d" %
                             retry_count)
                         cls.cookie_container_status = COOKIE_CONTAINER_FAILED_TO_INITIALIZE
                         break   # = return None
@@ -257,13 +260,15 @@ class NicoLive(object):
                 res = cookie_container.open(GET_PLAYER_STATUS_URL + live_id)
                 break
             except Exception, e:
-                self.logger.debug("error at get_player_status, lv: %s error: %s" % (live_id, e))
+                self.logger.warning("possible network error when opening api getplayerstatus, "
+                                    "lv: %s error: %s" % (live_id, e))
                 if retry_count < 5:
-                    self.logger.debug("retry..., lv: %s retry count: %d" % (live_id, retry_count))
+                    self.logger.debug("retrying to open api getplayerstatus, "
+                                      "lv: %s retry count: %d" % (live_id, retry_count))
                     time.sleep(2)
                 else:
-                    self.logger.debug("retried over, quit.., lv: %s retry count: %d" %
-                                      (live_id, retry_count))
+                    self.logger.error("gave up retrying to open api getplayerstatus, so quit, "
+                                      "lv: %s retry count: %d" % (live_id, retry_count))
                     return
                 retry_count += 1
 
@@ -386,14 +391,16 @@ class NicoLive(object):
                 sock.connect((host, port))
             except Exception, e:
                 # possible case like connection time out
-                self.logger.debug("detected timeout at socket connect(), error: %s" % e)
+                self.logger.warning(
+                    "possible network error when connecting to comment server, error: %s" % e)
                 if retry_count < 5:
                     self.logger.debug(
-                        "retry at socket connect(), retry count: %d" % retry_count)
+                        "retrying to connect to comment server, retry count: %d" % retry_count)
                     time.sleep(1)
                 else:
-                    self.logger.debug(
-                        "retried over at socket connect(), retry count: %d" % retry_count)
+                    self.logger.error(
+                        "gave up retrying to connect to comment server so quit, "
+                        "retry count: %d" % retry_count)
                     return
             else:
                 break
@@ -425,7 +432,7 @@ class NicoLive(object):
                     try:
                         element = etree.fromstring(message)
                     except etree.XMLSyntaxError, e:
-                        self.logger.debug("nicolive xml parse error: %s" % e)
+                        self.logger.warning("nicolive xml parse error: %s" % e)
                         self.logger.debug("xml: %s" % message)
 
                     try:
@@ -478,9 +485,9 @@ class NicoLive(object):
                                     # premium attribute value and disconnect command:
                                     # - http://www.yukun.info/blog/2008/08/python-if-for-in.html
                                     # - https://twitter.com/Hemus_/status/6766945512
-                                    self.logger.debug(
-                                        "detected command: %s w/ premium: %s" %
-                                        (comment, premium))
+                                    # self.logger.debug(
+                                    #     "detected command: %s w/ premium: %s" %
+                                    #     (comment, premium))
                                     # self.logger.debug("disconnect, xml: %s" % message)
                                     should_close_connection = True
                                     break
@@ -524,23 +531,23 @@ class NicoLive(object):
                 if e.code in ["notfound", "deletedbyuser", "deletedbyvisor", "violated",
                               "usertimeshift", "comingsoon", "require_community_member",
                               "closed", "noauth"]:
-                    self.logger.debug("caught regular error in get_player_status, so quit, "
+                    self.logger.debug("caught regular error in get_player_status(), so quit, "
                                       "lv: %s error: %s" % (live_id,  e))
                     break
                 else:
                     # possible case of session expiration, so clearing container and retry
-                    self.logger.debug(
-                        "caught irregular error in get_player_status, lv: %s error: %s" %
+                    self.logger.warning(
+                        "caught irregular error in get_player_status(), lv: %s error: %s" %
                         (live_id, e))
                     if retry_count < 5:
                         self.logger.debug(
-                            "retrying get_player_status..., lv: %s retry_count: %s" %
+                            "retrying get_player_status(), lv: %s retry count: %s" %
                             (live_id, retry_count))
                         NicoLive.cookie_container = None
                     else:
-                        self.logger.debug(
-                            "retried over get_player_status..., lv: %s retry_count: %s" %
-                            (live_id, retry_count))
+                        self.logger.error(
+                            "gave up retrying get_player_status(), so quit, "
+                            "lv: %s retry count: %s" % (live_id, retry_count))
                         break
             retry_count += 1
 
