@@ -161,7 +161,7 @@ class NicoLive(object):
         directory = os.path.dirname(log_file_path)
         try:
             os.makedirs(directory)
-        except OSError, e:
+        except OSError:
             # already existed
             pass
         else:
@@ -379,10 +379,28 @@ class NicoLive(object):
         # self.schedule_stream_stat_timer()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(SOCKET_TIMEOUT)
-        sock.connect((host, port))
+
+        retry_count = 0
+        while True:
+            try:
+                sock.connect((host, port))
+            except Exception, e:
+                # possible case like connection time out
+                self.logger.debug("detected timeout at socket connect(), error: %s" % e)
+                if retry_count < 5:
+                    self.logger.debug(
+                        "retry at socket connect(), retry count: %d" % retry_count)
+                    time.sleep(1)
+                else:
+                    self.logger.debug(
+                        "retried over at socket connect(), retry count: %d" % retry_count)
+                    return
+            else:
+                break
+            retry_count += 1
+
         sock.sendall(('<thread thread="%s" version="20061206" res_form="-1"/>'
                       + chr(0)) % thread)
-
         self.logger.debug("*** opened live thread, lv: %s server: %s,%s,%s" %
                           (live_id, host, port, thread))
         message = ""
