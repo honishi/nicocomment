@@ -12,6 +12,7 @@ from lxml import etree
 import time
 import re
 import cookielib
+import gzip
 import tweepy
 
 from nicoerror import UnexpectedStatusError
@@ -181,6 +182,30 @@ class NicoLive(object):
     def log_live(self, message):
         self.log_file_obj.write(message + "\n")
         self.log_file_obj.flush()
+
+    def gzip_live_log_file(self, live_id):
+        log_path = self.log_file_path_for_live_id(live_id)
+        gzipped_log_path = log_path + '.gz'
+
+        if not os.path.exists(log_path):
+            self.logger.debug("gzip requested log file not found, log file: %s" % log_path)
+            return
+
+        if os.path.exists(gzipped_log_path):
+            self.logger.debug("gzipped log file already exists, "
+                              "gzipped log file: %s" % gzipped_log_path)
+            return
+
+        self.logger.debug("gzipping live log file: %s", log_path)
+
+        log_file = open(log_path, 'rb')
+        gzipped_log_file = gzip.open(gzipped_log_path, 'wb')
+        gzipped_log_file.writelines(log_file)
+        gzipped_log_file.close()
+        log_file.close()
+
+        os.remove(log_path)
+        self.logger.debug("gzipped live log file: %s", gzipped_log_path)
 
 # main
     @classmethod
@@ -543,12 +568,21 @@ class NicoLive(object):
             comment_servers = self.get_comment_servers(room_label, host, port, thread)
             # self.logger.debug("comment servers: %s" % comment_servers)
 
+            ts = []
             for (host, port, thread) in comment_servers:
                 nicolive = NicoLive()
                 t = threading.Thread(name="%s,%s,%s" % (community_id, live_id, thread),
                                      target=nicolive.open_comment_server,
                                      args=(live_id, host, port, thread))
+                ts.append(t)
                 t.start()
+
+            for t in ts:
+                t.join()
+
+            self.logger.debug("finished all sub threads")
+            if self.live_logging:
+                self.gzip_live_log_file(live_id)
 
 
 if __name__ == "__main__":

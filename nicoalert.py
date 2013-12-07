@@ -157,6 +157,7 @@ class NicoAlert(object):
         self.logger.error("encountered unexpected alert recv() end.")
 
     def handle_live(self, live_id, community_id, user_id):
+        # TODO: should handle duplicate alert
         # self.logger.debug("*** live started: %s" % live_id)
         try:
             live = nicolive.NicoLive()
