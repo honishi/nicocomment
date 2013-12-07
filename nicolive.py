@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-import sys
 import ConfigParser
 import logging
 import logging.config
@@ -18,11 +17,6 @@ import tweepy
 from nicoerror import UnexpectedStatusError
 
 SOCKET_TIMEOUT = 60 * 30
-
-COOKIE_CONTAINER_NOT_INITIALIZED = 0
-COOKIE_CONTAINER_INITIALIZING = 1
-COOKIE_CONTAINER_FINISHED_TO_INITIALIZE = 2
-COOKIE_CONTAINER_FAILED_TO_INITIALIZE = 3
 
 NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.config'
 LIVE_LOG_DIR = os.path.dirname(os.path.abspath(__file__)) + '/log/live'
@@ -44,7 +38,7 @@ COMMENT_SERVER_PORT_LAST = 2814
 class NicoLive(object):
 # class variables
     logger = logging.getLogger()
-    cookie_container_status = COOKIE_CONTAINER_NOT_INITIALIZED
+    lock = threading.Lock()
     cookie_container = None
     sum_total_comment_count = 0
 
@@ -124,32 +118,39 @@ class NicoLive(object):
 
 # twitter
     def update_twitter_status(self, live_id, user_id, comment):
-        status = "[%s]\n%s\n%s%s".encode('UTF-8') % (
-            self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, live_id)
+        self.logger.debug("entering to critical section: update_twitter_status")
 
-        if (user_id == NicoLive.last_status_update_user_id and
-                status == NicoLive.last_status_update_status):
-            self.logger.debug(
-                "skipped duplicate tweet, user_id: %s status: [%s]" % (user_id, status))
-            return
+        with NicoLive.lock:
+            self.logger.debug("entered to critical section: update_twitter_status")
 
-        # the following 2 vars should be set here, instead of bottom of this method.
-        # because it takes some time to complete the tweepy's update_status() below,
-        # it causes duplicate tweet error, especially in case of back stage pass comment.
-        NicoLive.last_status_update_user_id = user_id
-        NicoLive.last_status_update_status = status
+            status = "[%s]\n%s\n%s%s".encode('UTF-8') % (
+                self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, live_id)
 
-        auth = tweepy.OAuthHandler(self.consumer_key[user_id], self.consumer_secret[user_id])
-        auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
-        try:
-            tweepy.API(auth).update_status(status)
-        except tweepy.error.TweepError, error:
-            # ("%s" % error) is unicode type; it's defined as TweepError.__str__ in
-            # tweepy/error.py. so we need to convert it to str type here.
-            # see http://bit.ly/jm5Zpc for details about string type conversion.
-            error_str = ("%s" % error).encode('UTF-8')
-            self.logger.error("error in post, user_id: %s status: [%s] error_response: %s" %
-                              (user_id, status, error_str))
+            if (user_id == NicoLive.last_status_update_user_id and
+                    status == NicoLive.last_status_update_status):
+                self.logger.debug(
+                    "skipped duplicate tweet, user_id: %s status: [%s]" % (user_id, status))
+            else:
+                auth = tweepy.OAuthHandler(
+                        self.consumer_key[user_id], self.consumer_secret[user_id])
+                auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
+                try:
+                    tweepy.API(auth).update_status(status)
+                except tweepy.error.TweepError, error:
+                    # ("%s" % error) is unicode type; it's defined as TweepError.__str__ in
+                    # tweepy/error.py. so we need to convert it to str type here.
+                    # see http://bit.ly/jm5Zpc for details about string type conversion.
+                    error_str = ("%s" % error).encode('UTF-8')
+                    self.logger.error(
+                        "error in post, user_id: %s status: [%s] error_response: %s" %
+                        (user_id, status, error_str))
+
+            NicoLive.last_status_update_user_id = user_id
+            NicoLive.last_status_update_status = status
+
+            self.logger.debug("exiting from critical section: update_twitter_status")
+
+        self.logger.debug("exited from critical section: update_twitter_status")
 
 # live log
     def log_file_path_for_live_id(self, live_id):
@@ -184,49 +185,39 @@ class NicoLive(object):
 # main
     @classmethod
     def get_cookie_container(cls, mail, password):
-        retry_count = 0
-        while cls.cookie_container_status == COOKIE_CONTAINER_INITIALIZING:
-            if retry_count < 60:
-                cls.logger.debug("waiting for cookie container initiailzation by other thread...")
-                time.sleep(1)
-            else:
-                cls.logger.error(
-                    "gave up waiting cookie container initialization by other thread, abort.")
-                cls.cookie_container = None
-                cls.cookie_container_status = COOKIE_CONTAINER_NOT_INITIALIZED
-                sys.exit()
-            retry_count += 1
+        # cls.logger.debug("entering to critical section: get_cookie_container")
 
-        if cls.cookie_container is None:
-            cls.cookie_container_status = COOKIE_CONTAINER_INITIALIZING
-
-            retry_count = 0
-            while True:
-                try:
-                    cookiejar = cookielib.CookieJar()
-                    opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookiejar))
-                    opener.open(LOGIN_URL, "mail=%s&password=%s" % (mail, password))
-                    cls.cookie_container = opener
-                except Exception, e:
-                    cls.logger.warning(
-                        "possible network error when initializing cookie container, "
-                        "error: %s" % e)
-                    if retry_count < 5:
-                        cls.logger.debug(
-                            "retrying cookie container initialization, retry count: %d" %
-                            retry_count)
-                        time.sleep(1)
+        with cls.lock:
+            # cls.logger.debug("entered to critical section: get_cookie_container")
+            if cls.cookie_container is None:
+                retry_count = 0
+                while True:
+                    try:
+                        cookiejar = cookielib.CookieJar()
+                        opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cookiejar))
+                        opener.open(LOGIN_URL, "mail=%s&password=%s" % (mail, password))
+                        cls.cookie_container = opener
+                    except Exception, e:
+                        cls.logger.warning(
+                            "possible network error when initializing cookie container, "
+                            "error: %s" % e)
+                        if retry_count < 5:
+                            cls.logger.debug(
+                                "retrying cookie container initialization, retry count: %d" %
+                                retry_count)
+                            time.sleep(1)
+                        else:
+                            cls.logger.error(
+                                "gave up retrying cookie container initialization, "
+                                "retry count: %d" % retry_count)
+                            break   # = return None
                     else:
-                        cls.logger.error(
-                            "gave up retrying cookie container initialization, retry count: %d" %
-                            retry_count)
-                        cls.cookie_container_status = COOKIE_CONTAINER_FAILED_TO_INITIALIZE
-                        break   # = return None
-                else:
-                    cls.logger.debug("opened cookie container")
-                    cls.cookie_container_status = COOKIE_CONTAINER_FINISHED_TO_INITIALIZE
-                    break
-                retry_count += 1
+                        cls.logger.debug("opened cookie container")
+                        break
+                    retry_count += 1
+
+            # cls.logger.debug("exiting from critical section: get_cookie_container")
+        # cls.logger.debug("exited from critical section: get_cookie_container")
 
         return cls.cookie_container
 
@@ -565,7 +556,7 @@ if __name__ == "__main__":
 
     # """
     nicolive = NicoLive()
-    nicolive.start(sys.argv[1], sys.argv[2], 0, sys.argv[3])
+    nicolive.start(os.sys.argv[1], os.sys.argv[2], 0, os.sys.argv[3])
     # """
 
     """
