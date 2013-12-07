@@ -45,5 +45,5 @@ args=("log/nicocomment.log",'a')
 keys=default
 
 [formatter_default]
-format=[%(asctime)s] [%(levelname)s] %(message)s
+format=[%(asctime)s] [%(levelname)s] [%(threadName)s] %(message)s
 datefmt=

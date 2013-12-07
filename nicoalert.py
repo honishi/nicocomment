@@ -5,13 +5,11 @@ import os
 import ConfigParser
 import logging
 import logging.config
-# import datetime
+import time
 import urllib
 import urllib2
 import socket
 import threading
-# from threading import Thread
-# from threading import Timer
 from lxml import etree
 
 import nicoerror
@@ -115,7 +113,7 @@ class NicoAlert(object):
                       + chr(0)) % thread)
 
         # schedule log timer
-        self.log_statistics()
+        self.kick_log_statistics()
 
         msg = ""
         while True:
@@ -162,7 +160,8 @@ class NicoAlert(object):
         # self.logger.debug("*** live started: %s" % live_id)
         try:
             live = nicolive.NicoLive()
-            p = threading.Thread(target=live.start,
+            p = threading.Thread(name="%s,%s" % (community_id, live_id),
+                                 target=live.start,
                                  args=(self.mail, self.password, community_id, live_id))
             p.start()
         except Exception, e:
@@ -173,13 +172,17 @@ class NicoAlert(object):
         communities, host, port, thread = self.get_alert_status(ticket)
         self.listen_alert(host, port, thread, self.handle_live)
 
+# statistics
     def log_statistics(self):
-        self.logger.info(
-            "*** received lives: %s active live threads: %s sum total comments: %s" %
-            (self.received_live_count,
-             threading.active_count(), nicolive.NicoLive.sum_total_comment_count))
+        while True:
+            self.logger.info(
+                "*** received lives: %s active live threads: %s sum total comments: %s" %
+                (self.received_live_count,
+                threading.active_count(), nicolive.NicoLive.sum_total_comment_count))
+            time.sleep(10)
 
-        t = threading.Timer(10, self.log_statistics)
+    def kick_log_statistics(self):
+        t = threading.Thread(target=self.log_statistics)
         t.start()
 
 

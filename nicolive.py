@@ -261,14 +261,14 @@ class NicoLive(object):
                 break
             except Exception, e:
                 self.logger.warning("possible network error when opening api getplayerstatus, "
-                                    "lv: %s error: %s" % (live_id, e))
+                                    "error: %s" % e)
                 if retry_count < 5:
                     self.logger.debug("retrying to open api getplayerstatus, "
-                                      "lv: %s retry count: %d" % (live_id, retry_count))
+                                      "retry count: %d" % retry_count)
                     time.sleep(2)
                 else:
                     self.logger.error("gave up retrying to open api getplayerstatus, so quit, "
-                                      "lv: %s retry count: %d" % (live_id, retry_count))
+                                      "retry count: %d" % retry_count)
                     return
                 retry_count += 1
 
@@ -285,9 +285,8 @@ class NicoLive(object):
         port = int(element.xpath("//getplayerstatus/ms/port")[0].text)
         thread = int(element.xpath("//getplayerstatus/ms/thread")[0].text)
 
-        self.logger.debug("*** getplayerstatus, live_id: %s room_label: %s "
-                          "host: %s port: %s thread: %s" %
-                          (live_id, room_label, host, port, thread))
+        self.logger.debug("*** getplayerstatus, room_label: %s host: %s port: %s thread: %s" %
+                          (room_label, host, port, thread))
         return room_label, host, port, thread
 
     def split_host(self, host):
@@ -408,8 +407,7 @@ class NicoLive(object):
 
         sock.sendall(('<thread thread="%s" version="20061206" res_form="-1"/>'
                       + chr(0)) % thread)
-        self.logger.debug("*** opened live thread, lv: %s server: %s,%s,%s" %
-                          (live_id, host, port, thread))
+        self.logger.debug("*** opened live thread, server: %s,%s,%s" % (host, port, thread))
         message = ""
         while True:
             try:
@@ -424,8 +422,8 @@ class NicoLive(object):
                     if self.live_logging:
                         self.log_live(message)
 
-                    # self.logger.debug("live_id: %s server: %s,%s,%s xml: %s" %
-                    #                   (live_id, host, port, thread, message))
+                    # self.logger.debug("server: %s,%s,%s xml: %s" %
+                    #                   (host, port, thread, message))
                     # wrap message using dummy "elements" tag to avoid parse error
                     message = "<elements>" + message + "</elements>"
 
@@ -438,8 +436,8 @@ class NicoLive(object):
                     try:
                         thread_element = element.xpath("//elements/thread")
                         if 0 < len(thread_element):
-                            # self.logger.debug("live_id: %s server: %s,%s,%s xml: %s" %
-                            #                   (live_id, host, port, thread, message))
+                            # self.logger.debug("server: %s,%s,%s xml: %s" %
+                            #                   (host, port, thread, message))
                             result_code = thread_element[0].attrib.get('resultcode')
                             if result_code == "1":
                                 # no comments will be provided from this thread
@@ -459,8 +457,8 @@ class NicoLive(object):
                                 comment = chat.text
                                 """
                                 self.logger.debug(
-                                    "live_id: %s server: %s,%s,%s user_id: %s comment: %s" %
-                                    (live_id, host, port, thread, user_id, comment))
+                                    "server: %s,%s,%s user_id: %s comment: %s" %
+                                    (host, port, thread, user_id, comment))
                                 """
                                 if comment == self.last_comment:
                                     continue
@@ -500,8 +498,8 @@ class NicoLive(object):
                 # self.logger.debug("break")
                 break
         # self.logger.debug("%s, (socket closed.)" % live_id)
-        self.logger.debug("*** closed live thread, lv: %s server: %s,%s,%s comments: %s" %
-                          (live_id, host, port, thread, self.comment_count))
+        self.logger.debug("*** closed live thread, server: %s,%s,%s comments: %s" %
+                          (host, port, thread, self.comment_count))
 
         if self.live_logging:
             self.log_file_obj.close()
@@ -512,8 +510,8 @@ class NicoLive(object):
         try:
             (community_name, live_name) = self.get_stream_info(live_id)
             self.logger.debug(
-                "*** stream info, lv: %s community name: %s live name: %s" %
-                (live_id, community_name, live_name))
+                "*** stream info, community name: %s live name: %s" %
+                (community_name, live_name))
         except Exception, e:
             self.logger.debug("could not get stream info: %s" % e)
         """
@@ -532,22 +530,20 @@ class NicoLive(object):
                               "usertimeshift", "comingsoon", "require_community_member",
                               "closed", "noauth"]:
                     self.logger.debug("caught regular error in get_player_status(), so quit, "
-                                      "lv: %s error: %s" % (live_id,  e))
+                                      "error: %s" % e)
                     break
                 else:
                     # possible case of session expiration, so clearing container and retry
                     self.logger.warning(
-                        "caught irregular error in get_player_status(), lv: %s error: %s" %
-                        (live_id, e))
+                        "caught irregular error in get_player_status(), error: %s" % e)
                     if retry_count < 5:
                         self.logger.debug(
-                            "retrying get_player_status(), lv: %s retry count: %s" %
-                            (live_id, retry_count))
+                            "retrying get_player_status(), retry count: %s" % retry_count)
                         NicoLive.cookie_container = None
                     else:
                         self.logger.error(
-                            "gave up retrying get_player_status(), so quit, "
-                            "lv: %s retry count: %s" % (live_id, retry_count))
+                            "gave up retrying get_player_status(), so quit, retry count: %s" %
+                            retry_count)
                         break
             retry_count += 1
 
@@ -558,7 +554,8 @@ class NicoLive(object):
 
             for (host, port, thread) in comment_servers:
                 nicolive = NicoLive()
-                t = threading.Thread(target=nicolive.open_comment_server,
+                t = threading.Thread(name="%s,%s,%s" % (community_id, live_id, thread),
+                                     target=nicolive.open_comment_server,
                                      args=(live_id, host, port, thread))
                 t.start()
 
