@@ -25,6 +25,7 @@ class NicoAlert(object):
 # object lifecycle
     def __init__(self):
         self.logger = logging.getLogger()
+        self.recent_lives = []
         self.received_live_count = 0
 
         (self.mail, self.password) = self.get_config()
@@ -157,8 +158,18 @@ class NicoAlert(object):
         self.logger.error("encountered unexpected alert recv() end.")
 
     def handle_live(self, live_id, community_id, user_id):
-        # TODO: should handle duplicate alert
         # self.logger.debug("*** live started: %s" % live_id)
+        if self.recent_lives.count(live_id):
+            self.logger.debug(
+                "skipped duplicate alert, live_id: %s community_id: %s user_id: %s" %
+                (live_id, community_id, user_id))
+            return
+
+        if 500 < len(self.recent_lives):
+            self.recent_lives.pop(0)
+        self.recent_lives.append(live_id)
+        # self.logger.debug("recent_lives: %s" % self.recent_lives)
+
         try:
             live = nicolive.NicoLive()
             p = threading.Thread(name="%s,%s" % (community_id, live_id),
