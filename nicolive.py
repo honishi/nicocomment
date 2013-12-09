@@ -133,7 +133,7 @@ class NicoLive(object):
                     "skipped duplicate tweet, user_id: %s status: [%s]" % (user_id, status))
             else:
                 auth = tweepy.OAuthHandler(
-                        self.consumer_key[user_id], self.consumer_secret[user_id])
+                    self.consumer_key[user_id], self.consumer_secret[user_id])
                 auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
                 try:
                     tweepy.API(auth).update_status(status)
@@ -542,20 +542,28 @@ class NicoLive(object):
                 break
             except UnexpectedStatusError, e:
                 # possible error code list: http://looooooooop.blog35.fc2.com/blog-entry-1159.html
-                if e.code in ["notfound", "deletedbyuser", "deletedbyvisor", "violated",
-                              "usertimeshift", "comingsoon", "require_community_member",
-                              "closed", "noauth"]:
+                if e.code == "require_community_member":
+                    self.logger.debug("live is 'require_community_member', so skip, "
+                                      "error: %s" % e)
+                    break
+                elif e.code in ["notfound", "deletedbyuser", "deletedbyvisor",
+                                "violated", "usertimeshift", "closed", "noauth"]:
                     self.logger.debug("caught regular error in get_player_status(), so quit, "
                                       "error: %s" % e)
                     break
                 else:
-                    # possible case of session expiration, so clearing container and retry
-                    self.logger.warning(
-                        "caught irregular error in get_player_status(), error: %s" % e)
+                    if e.code == "comingsoon":
+                        self.logger.debug("live is 'comingsoon', so retry, error: %s" % e)
+                        time.sleep(3)
+                    else:
+                        # possible case of session expiration, so clearing container and retry
+                        self.logger.warning(
+                            "caught irregular error in get_player_status(), error: %s" % e)
+                        NicoLive.cookie_container = None
+
                     if retry_count < 5:
                         self.logger.debug(
                             "retrying get_player_status(), retry count: %s" % retry_count)
-                        NicoLive.cookie_container = None
                     else:
                         self.logger.error(
                             "gave up retrying get_player_status(), so quit, retry count: %s" %
