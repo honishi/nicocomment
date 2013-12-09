@@ -28,6 +28,10 @@ GET_PLAYER_STATUS_URL = "http://watch.live.nicovideo.jp/api/getplayerstatus?v=lv
 # DEBUG_LOG_COMMENT = True
 DEBUG_LOG_COMMENT = False
 
+LIVE_TYPE_UNKNOWN = 0
+LIVE_TYPE_OFFICIAL = 1
+LIVE_TYPE_USER = 2
+
 LIVE_URL = "http://live.nicovideo.jp/watch/lv"
 
 COMMENT_SERVER_HOST_NUMBER_FIRST = 101
@@ -305,8 +309,9 @@ class NicoLive(object):
                           (room_label, host, port, thread))
         return room_label, host, port, thread
 
+    # comment server
     def split_host(self, host):
-        matched_host = re.match('(msg)(\d+)(\..+)', host)
+        matched_host = re.match(r'((?:o|)msg)(\d+)(\..+)', host)
         if not matched_host:
             return (None, None, None)
 
@@ -316,24 +321,17 @@ class NicoLive(object):
 
         return (host_prefix, host_number, host_surfix)
 
-    def get_arena_comment_server(self, stand_type, arena_host, arena_port, arena_thread):
-        host = arena_host
-        port = arena_port
-        thread = arena_thread
-
-        decrement_count = 0
-        if stand_type == "A":
-            decrement_count = 1
-        elif stand_type == "B":
-            decrement_count = 2
-        elif stand_type == "C":
-            decrement_count = 3
-
-        (host_prefix, host_number, host_surfix) = self.split_host(host)
-        if host_prefix is None or host_number is None or host_surfix is None:
-            return (host, port, thread)
-
-        for i in xrange(decrement_count):
+    def previous_comment_server(self, live_type, host_number, port, thread):
+        if live_type == LIVE_TYPE_OFFICIAL:
+            if host_number == COMMENT_SERVER_HOST_NUMBER_FIRST:
+                host_number = COMMENT_SERVER_HOST_NUMBER_LAST
+                if port == COMMENT_SERVER_PORT_FIRST:
+                    port = COMMENT_SERVER_PORT_LAST
+                else:
+                    port -= 1
+            else:
+                host_number -= 1
+        elif live_type == LIVE_TYPE_USER:
             if port == COMMENT_SERVER_PORT_FIRST:
                 port = COMMENT_SERVER_PORT_LAST
                 if host_number == COMMENT_SERVER_HOST_NUMBER_FIRST:
@@ -342,9 +340,78 @@ class NicoLive(object):
                     host_number -= 1
             else:
                 port -= 1
-            thread -= 1
+        thread -= 1
+
+        return (host_number, port, thread)
+
+    def next_comment_server(self, live_type, host_number, port, thread):
+        if live_type == LIVE_TYPE_OFFICIAL:
+            if host_number == COMMENT_SERVER_HOST_NUMBER_LAST:
+                host_number = COMMENT_SERVER_HOST_NUMBER_FIRST
+                if port == COMMENT_SERVER_PORT_LAST:
+                    port = COMMENT_SERVER_PORT_FIRST
+                else:
+                    port += 1
+            else:
+                host_number += 1
+        elif live_type == LIVE_TYPE_USER:
+            if port == COMMENT_SERVER_PORT_LAST:
+                port = COMMENT_SERVER_PORT_FIRST
+                if host_number == COMMENT_SERVER_HOST_NUMBER_LAST:
+                    host_number = COMMENT_SERVER_HOST_NUMBER_FIRST
+                else:
+                    host_number += 1
+            else:
+                port += 1
+        thread += 1
+
+        return (host_number, port, thread)
+
+    def get_arena_comment_server(
+            self, live_type, distance, provided_host, provided_port, provided_thread):
+        host = provided_host
+        port = provided_port
+        thread = provided_thread
+
+        (host_prefix, host_number, host_surfix) = self.split_host(host)
+        if host_prefix is None or host_number is None or host_surfix is None:
+            return (host, port, thread)
+
+        for i in xrange(distance):
+            (host_number, port, thread) = self.previous_comment_server(
+                live_type, host_number, port, thread)
 
         return (host_prefix + str(host_number) + host_surfix, port, thread)
+
+    def calculate_distance_from_arena(self, live_type, room_label):
+        distance = -1
+
+        matched_room = re.match('c(?:o|h)\d+', room_label)
+        if matched_room:
+            # arena
+            # self.logger.debug("no need to adjust the room")
+            distance = 0
+        else:
+            if live_type == LIVE_TYPE_OFFICIAL:
+                # TODO: temporary implementation
+                self.logger.warning("official live but could not get the seat in arena, "
+                                    "this is not supported right now, so skip.")
+                pass
+            elif live_type == LIVE_TYPE_USER:
+                matched_room = re.match(u'立ち見(\w)列', room_label)
+                if matched_room:
+                    # stand A, B, C. host, port, thread should be adjusted
+                    stand_type = matched_room.group(1)
+                    if stand_type == "A":
+                        distance = 1
+                    elif stand_type == "B":
+                        distance = 2
+                    elif stand_type == "C":
+                        distance = 3
+                if distance == -1:
+                    self.logger.warning("could not parse room label: %s" % room_label)
+
+        return distance
 
     def get_comment_servers(self, room_label, host, port, thread):
         """
@@ -354,43 +421,31 @@ class NicoLive(object):
         """
         comment_servers = []
 
-        matched_room = re.match('co\d+', room_label)
-        if matched_room:
-            # arena
-            # self.logger.debug("no need to adjust the room")
-            pass
+        live_type = LIVE_TYPE_UNKNOWN
+        if re.match(r'^o', host):
+            # self.logger.error(u'detected official live')
+            live_type = LIVE_TYPE_OFFICIAL
         else:
-            matched_room = re.match(u'立ち見(\w)列', room_label)
-            if matched_room:
-                # stand A, B, C. host, port, thread should be adjusted
-                stand_type = matched_room.group(1)
-                (host, port, thread) = self.get_arena_comment_server(
-                    stand_type, host, port, thread)
-                # self.logger.debug("adjusted arena server, host: %s port: %s thread: %s" %
-                #                   (host, port, thread))
-            else:
-                # channel live? not supported for now
-                self.logger.debug("live is not user live, so skip")
-                return comment_servers
+            # self.logger.debug(u'detected user/channel live')
+            live_type = LIVE_TYPE_USER
 
-        (host_prefix, host_number, host_surfix) = self.split_host(host)
-        if host_prefix is None or host_number is None or host_surfix is None:
+        distance_from_arena = self.calculate_distance_from_arena(live_type, room_label)
+        if distance_from_arena < 0:
             return comment_servers
 
+        (host, port, thread) = self.get_arena_comment_server(
+            live_type, distance_from_arena, host, port, thread)
+
+        (host_prefix, host_number, host_surfix) = self.split_host(host)
         for i in xrange(4):
-            comment_servers.append((host_prefix + str(host_number) + host_surfix, port, thread))
-            if port == COMMENT_SERVER_PORT_LAST:
-                port = COMMENT_SERVER_PORT_FIRST
-                if host_number == COMMENT_SERVER_HOST_NUMBER_LAST:
-                    host_number = COMMENT_SERVER_HOST_NUMBER_FIRST
-                else:
-                    host_number += 1
-            else:
-                port += 1
-            thread += 1
+            comment_servers.append(
+                (host_prefix + str(host_number) + host_surfix, port, thread))
+            (host_number, port, thread) = self.next_comment_server(
+                live_type, host_number, port, thread)
 
         return comment_servers
 
+# public method
     def open_comment_server(self, live_id, host, port, thread):
         if self.live_logging:
             self.log_file_obj = self.open_live_log_file(live_id)
@@ -520,7 +575,6 @@ class NicoLive(object):
         if self.live_logging:
             self.log_file_obj.close()
 
-# public method
     def start(self, mail, password, community_id, live_id):
         """
         try:
@@ -611,12 +665,53 @@ if __name__ == "__main__":
 
     """
     nicolive = NicoLive()
-    nicolive.get_comment_servers(u"co12345", "msg103.live.nicovideo.jp", 2808, 1314071859)
-    nicolive.get_comment_servers(u"立ち見A列", "msg103.live.nicovideo.jp", 2808, 1314071859)
-    nicolive.get_comment_servers(u"立ち見A列", "msg103.live.nicovideo.jp", 2805, 1314071859)
-    nicolive.get_comment_servers(u"立ち見A列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    nicolive.get_comment_servers(u"立ち見B列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    nicolive.get_comment_servers(u"立ち見C列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    nicolive.get_comment_servers(u"立ち見Z列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    nicolive.get_comment_servers(u"ch12345", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    # user
+    comment_servers = nicolive.get_comment_servers(
+        u"co12345", "msg103.live.nicovideo.jp", 2808, 1314071859)
+    logging.debug(comment_servers)
+
+    comment_servers = nicolive.get_comment_servers(
+        u"立ち見A列", "msg103.live.nicovideo.jp", 2808, 1314071859)
+    logging.debug(comment_servers)
+
+    comment_servers = nicolive.get_comment_servers(
+        u"立ち見A列", "msg103.live.nicovideo.jp", 2805, 1314071859)
+    logging.debug(comment_servers)
+
+    comment_servers = nicolive.get_comment_servers(
+        u"立ち見A列", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    logging.debug(comment_servers)
+
+    comment_servers = nicolive.get_comment_servers(
+        u"立ち見B列", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    logging.debug(comment_servers)
+
+    comment_servers = nicolive.get_comment_servers(
+        u"立ち見C列", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    logging.debug(comment_servers)
+
+    comment_servers = nicolive.get_comment_servers(
+        u"立ち見Z列", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    logging.debug(comment_servers)
+
+    comment_servers = nicolive.get_comment_servers(
+        u"xxx", "msg101.live.nicovideo.jp", 2805, 1314071859)
+    logging.debug(comment_servers)
+
+    # official
+    servers = nicolive.get_comment_servers(
+        u"ch12345", "omsg101.live.nicovideo.jp", 2805, 1314071859)
+    logging.debug(servers)
+
+    servers = nicolive.get_comment_servers(
+        u"ch12345", "omsg104.live.nicovideo.jp", 2808, 1314071859)
+    logging.debug(servers)
+
+    servers = nicolive.get_comment_servers(
+        u"ch12345", "omsg103.live.nicovideo.jp", 2814, 1314071859)
+    logging.debug(servers)
+
+    servers = nicolive.get_comment_servers(
+        u"xxx", "omsg103.live.nicovideo.jp", 2814, 1314071859)
+    logging.debug(servers)
     """
