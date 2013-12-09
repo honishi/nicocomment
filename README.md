@@ -43,13 +43,13 @@ then configure the max open files and max open processes settings.
 $ sudo vi /etc/security/limits.conf
 
 # for opening tons of sockets to comment servers.
-honishi soft nofile 32768
-honishi hard nofile 32768
+honishi soft nofile 65536
+honishi hard nofile 65536
 
 # for forking thread in the live comment listening.
 # thread is treated as process internally in the kernel that uses NPTL(Native POSIX Thread Library)
-honishi soft nproc 32768
-honishi hard nproc 32768
+honishi soft nproc 65536
+honishi hard nproc 65536
 ````
 
 restart the box and check the settings above are successfully configured.
@@ -62,11 +62,11 @@ start & stop
 --
 start.
 ````
-./nicocomment.sh start
+$ ./nicocomment.sh start
 ````
 stop.
 ````
-./nicocomment.sh stop
+$ ./nicocomment.sh stop
 ````
 
 monitoring example using crontab

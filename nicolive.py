@@ -580,7 +580,7 @@ class NicoLive(object):
             for t in ts:
                 t.join()
 
-            self.logger.debug("finished all sub threads")
+            # self.logger.debug("finished all sub threads")
             if self.live_logging:
                 self.gzip_live_log_file(live_id)
 
