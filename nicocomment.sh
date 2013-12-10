@@ -6,12 +6,13 @@ basedir=$(cd $(dirname $0);pwd)
 pyenv=${basedir}/venv/bin/activate
 program=${basedir}/nicocomment.py
 logfile=${basedir}/log/nicocomment.log
+nohupfile=${basedir}/log/nohup.out
 kill_python="python ${program}"
 monitor_threshold=$((30))
 customenv=${basedir}/nicocomment.env
 
 start() {
-  nohup ${program} >> ${logfile} 2>&1 &
+  nohup ${program} >> ${nohupfile} 2>&1 &
 }
 
 stop() {
@@ -38,6 +39,7 @@ monitor() {
   echo $(date) monitor end
 }
 
+cd ${basedir}
 source ${pyenv}
 
 if [ -e ${customenv} ]; then
