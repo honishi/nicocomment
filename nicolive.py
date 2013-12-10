@@ -429,15 +429,20 @@ class NicoLive(object):
             # self.logger.debug(u'detected user/channel live')
             live_type = LIVE_TYPE_USER
 
+        room_count = 0
         distance_from_arena = self.calculate_distance_from_arena(live_type, room_label)
         if distance_from_arena < 0:
-            return comment_servers
-
-        (host, port, thread) = self.get_arena_comment_server(
-            live_type, distance_from_arena, host, port, thread)
+            # could not calculate distance from arena,
+            # so use host, port and thread with no change
+            room_count = 1
+        else:
+            (host, port, thread) = self.get_arena_comment_server(
+                live_type, distance_from_arena, host, port, thread)
+            # arena + stand a + stand b + stand c
+            room_count = 4
 
         (host_prefix, host_number, host_surfix) = self.split_host(host)
-        for i in xrange(4):
+        for i in xrange(room_count):
             comment_servers.append(
                 (host_prefix + str(host_number) + host_surfix, port, thread))
             (host_number, port, thread) = self.next_comment_server(
