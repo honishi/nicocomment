@@ -36,8 +36,10 @@ LIVE_URL = "http://live.nicovideo.jp/watch/lv"
 
 COMMENT_SERVER_HOST_NUMBER_FIRST = 101
 COMMENT_SERVER_HOST_NUMBER_LAST = 104
-COMMENT_SERVER_PORT_FIRST = 2805
-COMMENT_SERVER_PORT_LAST = 2814
+COMMENT_SERVER_PORT_OFFICIAL_FIRST = 2815
+COMMENT_SERVER_PORT_OFFICIAL_LAST = 2817
+COMMENT_SERVER_PORT_USER_FIRST = 2805
+COMMENT_SERVER_PORT_USER_LAST = 2814
 
 
 class NicoLive(object):
@@ -325,15 +327,15 @@ class NicoLive(object):
         if live_type == LIVE_TYPE_OFFICIAL:
             if host_number == COMMENT_SERVER_HOST_NUMBER_FIRST:
                 host_number = COMMENT_SERVER_HOST_NUMBER_LAST
-                if port == COMMENT_SERVER_PORT_FIRST:
-                    port = COMMENT_SERVER_PORT_LAST
+                if port == COMMENT_SERVER_PORT_OFFICIAL_FIRST:
+                    port = COMMENT_SERVER_PORT_OFFICIAL_LAST
                 else:
                     port -= 1
             else:
                 host_number -= 1
         elif live_type == LIVE_TYPE_USER:
-            if port == COMMENT_SERVER_PORT_FIRST:
-                port = COMMENT_SERVER_PORT_LAST
+            if port == COMMENT_SERVER_PORT_USER_FIRST:
+                port = COMMENT_SERVER_PORT_USER_LAST
                 if host_number == COMMENT_SERVER_HOST_NUMBER_FIRST:
                     host_number = COMMENT_SERVER_HOST_NUMBER_LAST
                 else:
@@ -348,15 +350,15 @@ class NicoLive(object):
         if live_type == LIVE_TYPE_OFFICIAL:
             if host_number == COMMENT_SERVER_HOST_NUMBER_LAST:
                 host_number = COMMENT_SERVER_HOST_NUMBER_FIRST
-                if port == COMMENT_SERVER_PORT_LAST:
-                    port = COMMENT_SERVER_PORT_FIRST
+                if port == COMMENT_SERVER_PORT_OFFICIAL_LAST:
+                    port = COMMENT_SERVER_PORT_OFFICIAL_FIRST
                 else:
                     port += 1
             else:
                 host_number += 1
         elif live_type == LIVE_TYPE_USER:
-            if port == COMMENT_SERVER_PORT_LAST:
-                port = COMMENT_SERVER_PORT_FIRST
+            if port == COMMENT_SERVER_PORT_USER_LAST:
+                port = COMMENT_SERVER_PORT_USER_FIRST
                 if host_number == COMMENT_SERVER_HOST_NUMBER_LAST:
                     host_number = COMMENT_SERVER_HOST_NUMBER_FIRST
                 else:
@@ -705,18 +707,18 @@ if __name__ == "__main__":
 
     # official
     servers = nicolive.get_comment_servers(
-        u"ch12345", "omsg101.live.nicovideo.jp", 2805, 1314071859)
+        u"ch12345", "omsg101.live.nicovideo.jp", 2815, 1314071859)
     logging.debug(servers)
 
     servers = nicolive.get_comment_servers(
-        u"ch12345", "omsg104.live.nicovideo.jp", 2808, 1314071859)
+        u"ch12345", "omsg104.live.nicovideo.jp", 2815, 1314071859)
     logging.debug(servers)
 
     servers = nicolive.get_comment_servers(
-        u"ch12345", "omsg103.live.nicovideo.jp", 2814, 1314071859)
+        u"ch12345", "omsg103.live.nicovideo.jp", 2817, 1314071859)
     logging.debug(servers)
 
     servers = nicolive.get_comment_servers(
-        u"xxx", "omsg103.live.nicovideo.jp", 2814, 1314071859)
+        u"xxx", "omsg103.live.nicovideo.jp", 2815, 1314071859)
     logging.debug(servers)
     """
