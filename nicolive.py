@@ -396,8 +396,8 @@ class NicoLive(object):
         else:
             if live_type == LIVE_TYPE_OFFICIAL:
                 # TODO: temporary implementation
-                self.logger.warning("official live but could not get the seat in arena, "
-                                    "this is not supported right now, so skip.")
+                self.logger.warning("official live but could not parse the room label properly. "
+                                    "this is expected, cause it's still not implemented.")
                 pass
             elif live_type == LIVE_TYPE_USER:
                 matched_room = re.match(u'立ち見(\w)列', room_label)
