@@ -3,7 +3,7 @@ venv/
 .cache
 log/*.log*
 log/nohup.out
-log/live
+log/live.*
 
 nicocomment.config*
 !nicocomment.config.sample
