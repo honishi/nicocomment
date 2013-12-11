@@ -6,6 +6,7 @@ sample
 -------------
 ![sample](./sample/screenshot.png)
 - http://www.nicovideo.jp/watch/sm22365097
+- http://www.nicovideo.jp/watch/sm22431441
 
 requirements
 --

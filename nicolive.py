@@ -26,8 +26,6 @@ LIVE_LOG_BASE_DIR = os.path.dirname(os.path.abspath(__file__)) + '/log/live'
 LOGIN_URL = "https://secure.nicovideo.jp/secure/login?site=niconico"
 GET_STREAM_INFO_URL = "http://live.nicovideo.jp/api/getstreaminfo/lv"
 GET_PLAYER_STATUS_URL = "http://watch.live.nicovideo.jp/api/getplayerstatus?v=lv"
-# DEBUG_LOG_COMMENT = True
-DEBUG_LOG_COMMENT = False
 
 LIVE_TYPE_UNKNOWN = 0
 LIVE_TYPE_OFFICIAL = 1
@@ -41,6 +39,9 @@ COMMENT_SERVER_PORT_OFFICIAL_FIRST = 2815
 COMMENT_SERVER_PORT_OFFICIAL_LAST = 2817
 COMMENT_SERVER_PORT_USER_FIRST = 2805
 COMMENT_SERVER_PORT_USER_LAST = 2814
+
+# DEBUG_DUMMY_COMMENT_AND_EXIT = True
+DEBUG_DUMMY_COMMENT_AND_EXIT = False
 
 
 class NicoLive(object):
@@ -161,16 +162,9 @@ class NicoLive(object):
         self.logger.debug("exited from critical section: update_twitter_status")
 
 # live log
-    def live_log_file_path(self, log_dir, live_id):
-        if log_dir is None:
-            log_dir = LIVE_LOG_BASE_DIR
-        sub_directory = live_id[len(live_id)-3:]
-        return log_dir + '/' + sub_directory + '/' + live_id + '.log'
-
-    def open_live_log_file(self, log_dir, live_id):
-        log_path = self.live_log_file_path(log_dir, live_id)
-        if not os.path.exists(log_path):
-            directory = os.path.dirname(log_path)
+    def open_live_log_file(self, log_filename):
+        if not os.path.exists(log_filename):
+            directory = os.path.dirname(log_filename)
             try:
                 os.makedirs(directory)
             except OSError:
@@ -179,8 +173,8 @@ class NicoLive(object):
             else:
                 self.logger.debug("directory %s created." % directory)
 
-        file_obj = open(log_path, 'a')
-        self.logger.debug("opened live log file: %s" % log_path)
+        file_obj = open(log_filename, 'a')
+        self.logger.debug("opened live log file: %s" % log_filename)
 
         return file_obj
 
@@ -188,29 +182,28 @@ class NicoLive(object):
         self.log_file_obj.write(message + "\n")
         self.log_file_obj.flush()
 
-    def gzip_live_log_file(self, log_dir, live_id):
-        log_path = self.live_log_file_path(log_dir, live_id)
-        gzipped_log_path = log_path + '.gz'
+    def gzip_live_log_file(self, log_filename):
+        gzipped_log_filename = log_filename + '.gz'
 
-        if not os.path.exists(log_path):
-            self.logger.debug("gzip requested log file not found, log file: %s" % log_path)
+        if not os.path.exists(log_filename):
+            self.logger.debug("gzip requested log file not found, log file: %s" % log_filename)
             return
 
-        if os.path.exists(gzipped_log_path):
+        if os.path.exists(gzipped_log_filename):
             self.logger.debug("gzipped log file already exists, "
-                              "gzipped log file: %s" % gzipped_log_path)
+                              "gzipped log file: %s" % gzipped_log_filename)
             return
 
-        self.logger.debug("gzipping live log file: %s", log_path)
+        self.logger.debug("gzipping live log file: %s", log_filename)
 
-        log_file = open(log_path, 'rb')
-        gzipped_log_file = gzip.open(gzipped_log_path, 'wb')
+        log_file = open(log_filename, 'rb')
+        gzipped_log_file = gzip.open(gzipped_log_filename, 'wb')
         gzipped_log_file.writelines(log_file)
         gzipped_log_file.close()
         log_file.close()
-        os.remove(log_path)
+        os.remove(log_filename)
 
-        self.logger.debug("gzipped live log file: %s", gzipped_log_path)
+        self.logger.debug("gzipped live log file: %s", gzipped_log_filename)
 
 # main
     @classmethod
@@ -452,12 +445,16 @@ class NicoLive(object):
         return comment_servers
 
 # public method
-    def open_comment_server(self, live_id, host, port, thread, log_dir=None):
-        if self.live_logging:
-            self.log_file_obj = self.open_live_log_file(log_dir, live_id)
+    def open_comment_server(self, live_id, host, port, thread, log_filename=None):
+        if self.live_logging and log_filename:
+            self.log_file_obj = self.open_live_log_file(log_filename)
+
+            if DEBUG_DUMMY_COMMENT_AND_EXIT:
+                self.log_live("dummy comment...")
+                self.log_file_obj.close()
+                return
 
         # main loop
-        # self.schedule_stream_stat_timer()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(SOCKET_TIMEOUT)
 
@@ -496,7 +493,7 @@ class NicoLive(object):
 
             for character in recved:
                 if character == chr(0):
-                    if self.live_logging:
+                    if self.live_logging and log_filename:
                         self.log_live(message)
 
                     # self.logger.debug("server: %s,%s,%s xml: %s" %
@@ -532,16 +529,11 @@ class NicoLive(object):
                                 if premium is None:
                                     premium = "0"
                                 comment = chat.text
-                                """
-                                self.logger.debug(
-                                    "server: %s,%s,%s user_id: %s comment: %s" %
-                                    (host, port, thread, user_id, comment))
-                                """
                                 if comment == self.last_comment:
                                     continue
                                 self.last_comment = comment
-                                self.comment_count += 1
 
+                                self.comment_count += 1
                                 NicoLive.sum_total_comment_count += 1
 
                                 for monitoring_user_id in self.monitoring_user_ids:
@@ -578,7 +570,7 @@ class NicoLive(object):
         self.logger.debug("*** closed live thread, server: %s,%s,%s comments: %s" %
                           (host, port, thread, self.comment_count))
 
-        if self.live_logging:
+        if self.live_logging and log_filename:
             self.log_file_obj.close()
 
     def start(self, mail, password, community_id, live_id):
@@ -636,13 +628,14 @@ class NicoLive(object):
             comment_servers = self.get_comment_servers(room_label, host, port, thread)
             # self.logger.debug("comment servers: %s" % comment_servers)
 
-            log_dir = LIVE_LOG_BASE_DIR + "." + dt.now().strftime('%Y%m%d')
+            log_filename = (LIVE_LOG_BASE_DIR + "." + dt.now().strftime('%Y%m%d')  + '/' +
+                            live_id[len(live_id)-3:] + '/' + live_id + '.log')
             ts = []
             for (host, port, thread) in comment_servers:
                 nicolive = NicoLive()
                 t = threading.Thread(name="%s,%s,%s" % (community_id, live_id, thread),
                                      target=nicolive.open_comment_server,
-                                     args=(live_id, host, port, thread, log_dir))
+                                     args=(live_id, host, port, thread, log_filename))
                 ts.append(t)
                 t.start()
 
@@ -651,7 +644,7 @@ class NicoLive(object):
 
             # self.logger.debug("finished all sub threads")
             if self.live_logging:
-                self.gzip_live_log_file(log_dir, live_id)
+                self.gzip_live_log_file(log_filename)
 
 
 if __name__ == "__main__":
@@ -721,9 +714,4 @@ if __name__ == "__main__":
     servers = nicolive.get_comment_servers(
         u"xxx", "omsg103.live.nicovideo.jp", 2815, 1314071859)
     logging.debug(servers)
-    """
-
-    """
-    nicolive = NicoLive()
-    logging.debug("live log dir: %s" % nicolive.live_log_dir)
     """
