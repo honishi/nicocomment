@@ -7,33 +7,43 @@ pyenv=${basedir}/venv/bin/activate
 program=${basedir}/nicocomment.py
 logfile=${basedir}/log/nicocomment.log
 nohupfile=${basedir}/log/nohup.out
-kill_python="python ${program}"
+pgrep_target="python ${program}"
 monitor_threshold=$((30))
 customenv=${basedir}/nicocomment.env
 
 start() {
-  nohup ${program} >> ${nohupfile} 2>&1 &
+  if [ 0 -lt $(pgrep -f "${pgrep_target}" | wc -l) ]
+  then
+    echo "already started."
+  else
+    nohup ${program} >> ${nohupfile} 2>&1 &
+  fi
 }
 
 stop() {
-  pkill -f "${kill_python}" || true
+  pkill -f "${pgrep_target}" || true
   echo "killed." >> ${logfile}
 }
 
 monitor() {
   echo $(date) monitor start
 
-  last_modified=$(date -r ${logfile} +%s)
-  # last_modified=0
-  current=$(date +%s)
-  # echo $last_modified
-  # echo $current
+  if [ ! -e ${logfile} ]; then
+    echo $(date) "log file ${logfile} does not exist."
+    echo $(date) "trying to start application."
+    stop
+    start
+  else
+    last_modified=$(date -r ${logfile} +%s)
+    current=$(date +%s)
 
-  if [ $((${last_modified} + ${monitor_threshold})) -lt ${current} ]
-  then
-      echo $(date) "it seems that the file ${logfile} is not updated in ${monitor_threshold} seconds, so try to restart."
+    if [ $((${last_modified} + ${monitor_threshold})) -lt ${current} ]
+    then
+      echo $(date) "log file ${logfile} has not been updated for ${monitor_threshold} seconds."
+      echo $(date) "trying to restart application."
       stop
       start
+    fi
   fi
 
   echo $(date) monitor end
@@ -49,14 +59,19 @@ fi
 case "$1" in
   start)
     stop
-    start ;;
+    start
+    ;;
   stop)
-    stop ;;
+    stop
+    ;;
   restart)
     stop
-    start ;;
+    start
+    ;;
   monitor)
-    monitor ;;
+    monitor
+    ;;
   *)
-    echo $"usage: $prog {start|stop|restart|monitor}" && exit 1
+    echo $"usage: ${0} {start|stop|restart|monitor}"
+    exit 1
 esac
