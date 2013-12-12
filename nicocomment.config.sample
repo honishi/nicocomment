@@ -20,26 +20,32 @@ access_key = xxxxxxxxxx
 access_secret = xxxxxxxxxx
 
 [loggers]
-keys=root
+keys=root,alert
 
 [logger_root]
 level=NOTSET
-handlers=file
+handlers=root
+
+[logger_alert]
+level=NOTSET
+handlers=alert
+qualname=alert
+propagate=0
 
 [handlers]
-keys=stdout,file
+keys=root,alert
 
-[handler_stdout]
-class=StreamHandler
-level=NOTSET
-formatter=default
-args=(sys.stdout,)
-
-[handler_file]
+[handler_root]
 class=handlers.RotatingFileHandler
 level=NOTSET
 formatter=default
 args=(os.getcwd() + "/log/nicocomment.log", 'a', (500*1024*1024), 10)
+
+[handler_alert]
+class=handlers.RotatingFileHandler
+level=NOTSET
+formatter=default
+args=(os.getcwd() + "/log/nicoalert.log", 'a', (100*1024*1024), 10)
 
 [formatters]
 keys=default

@@ -628,7 +628,7 @@ class NicoLive(object):
             comment_servers = self.get_comment_servers(room_label, host, port, thread)
             # self.logger.debug("comment servers: %s" % comment_servers)
 
-            log_filename = (LIVE_LOG_BASE_DIR + "." + dt.now().strftime('%Y%m%d')  + '/' +
+            log_filename = (LIVE_LOG_BASE_DIR + "." + dt.now().strftime('%Y%m%d') + '/' +
                             live_id[len(live_id)-3:] + '/' + live_id + '.log')
             ts = []
             for (host, port, thread) in comment_servers:

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 log='./nicocomment.log'
+alertlog='./nicoalert.log'
 
 netstat_target_host='202.248.110.'
 netstat_sleep_time=10
@@ -20,7 +21,7 @@ case "$1" in
     tail -F ${log} | grep --line-buffered -P -i "retry"
     ;;
   alert)
-    tail -F ${log} | \
+    tail -F ${alertlog} | \
       grep --line-buffered -P -i "received alert" | \
       grep --line-buffered -P " \d+ |co\d+"
     ;;

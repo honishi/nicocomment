@@ -4,12 +4,16 @@ set -e
 
 basedir=$(cd $(dirname $0);pwd)
 pyenv=${basedir}/venv/bin/activate
-program=${basedir}/nicocomment.py
-logfile=${basedir}/log/nicocomment.log
-nohupfile=${basedir}/log/nohup.out
-pgrep_target="python ${program}"
-monitor_threshold=$((30))
 customenv=${basedir}/nicocomment.env
+program=${basedir}/nicocomment.py
+pgrep_target="python ${program}"
+
+monitor_threshold=$((30))
+
+nohupfile=${basedir}/log/nohup.out
+logfile=${basedir}/log/nicocomment.log
+alertlogfile=${basedir}/log/nicoalert.log
+
 
 start() {
   if [ 0 -lt $(pgrep -f "${pgrep_target}" | wc -l) ]
@@ -26,27 +30,34 @@ stop() {
 }
 
 monitor() {
-  echo $(date) monitor start
+  target_logfile=${1}
+  restarted=0
 
-  if [ ! -e ${logfile} ]; then
-    echo $(date) "log file ${logfile} does not exist."
+  echo $(date) monitor start
+  echo $(date) target logfile: ${target_logfile}
+
+  if [ ! -e ${target_logfile} ]; then
+    echo $(date) "log file ${target_logfile} does not exist."
     echo $(date) "trying to start application."
     stop
     start
+    restarted=1
   else
-    last_modified=$(date -r ${logfile} +%s)
+    last_modified=$(date -r ${target_logfile} +%s)
     current=$(date +%s)
 
     if [ $((${last_modified} + ${monitor_threshold})) -lt ${current} ]
     then
-      echo $(date) "log file ${logfile} has not been updated for ${monitor_threshold} seconds."
+      echo $(date) "log file ${target_logfile} has not been updated for ${monitor_threshold} seconds."
       echo $(date) "trying to restart application."
       stop
       start
+      restarted=1
     fi
   fi
 
   echo $(date) monitor end
+  return ${restarted}
 }
 
 cd ${basedir}
@@ -69,7 +80,12 @@ case "$1" in
     start
     ;;
   monitor)
-    monitor
+    echo $(date) "checking root logfile..."
+    monitor ${logfile}
+    if [ ${?} -eq 0 ]; then
+      echo $(date) "checking alert logfile..."
+      monitor ${alertlogfile}
+    fi
     ;;
   *)
     echo $"usage: ${0} {start|stop|restart|monitor}"

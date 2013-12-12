@@ -25,6 +25,8 @@ class NicoAlert(object):
 # object lifecycle
     def __init__(self):
         self.logger = logging.getLogger()
+        self.alert_logger = logging.getLogger("alert")
+
         self.recent_lives = []
         self.received_live_count = 0
 
@@ -144,9 +146,9 @@ class NicoAlert(object):
                                 if len(lives) == 3:
                                     # the stream is NOT the official one
                                     live_id, community_id, user_id = lives
-                                    self.logger.debug("received alert, live_id: %s "
-                                                      "community_id: %s user_id: %s" %
-                                                      (live_id, community_id, user_id))
+                                    self.alert_logger.info(
+                                        "received alert, live_id: %s community_id: %s "
+                                        "user_id: %s" % (live_id, community_id, user_id))
 
                                     handler(live_id, community_id, user_id)
                                     self.received_live_count += 1
@@ -190,7 +192,7 @@ class NicoAlert(object):
             self.logger.info(
                 "*** received lives: %s active live threads: %s sum total comments: %s" %
                 (self.received_live_count,
-                threading.active_count(), nicolive.NicoLive.sum_total_comment_count))
+                 threading.active_count(), nicolive.NicoLive.sum_total_comment_count))
             time.sleep(10)
 
     def kick_log_statistics(self):
