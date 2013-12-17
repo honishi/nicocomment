@@ -18,6 +18,16 @@ import tweepy
 
 from nicoerror import UnexpectedStatusError
 
+RETRY_INTERVAL_GET_COOKIE_CONTAINER = 1
+RETRY_INTERVAL_GET_PLAYER_STATUS = 3
+RETRY_INTERVAL_OPEN_COMMENT_SERVER_SOCKET = 1
+
+MAX_RETRY_COUNT_GET_COOKIE_CONTAINER = 5
+MAX_RETRY_COUNT_GET_PLAYER_STATUS = 5
+# block_now_count_overflow case, retrying for 30 min
+MAX_RETRY_COUNT_GET_PLAYER_STATUS_BNCO = 30 * 60 / RETRY_INTERVAL_GET_PLAYER_STATUS
+MAX_RETRY_COUNT_OPEN_COMMENT_SERVER_SOCKET = 5
+
 SOCKET_TIMEOUT = 60 * 30
 
 NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.config'
@@ -224,11 +234,11 @@ class NicoLive(object):
                         cls.logger.warning(
                             "possible network error when initializing cookie container, "
                             "error: %s" % e)
-                        if retry_count < 5:
+                        if retry_count < MAX_RETRY_COUNT_GET_COOKIE_CONTAINER:
                             cls.logger.debug(
                                 "retrying cookie container initialization, retry count: %d" %
                                 retry_count)
-                            time.sleep(1)
+                            time.sleep(RETRY_INTERVAL_GET_COOKIE_CONTAINER)
                         else:
                             cls.logger.error(
                                 "gave up retrying cookie container initialization, "
@@ -276,10 +286,10 @@ class NicoLive(object):
             except Exception, e:
                 self.logger.warning("possible network error when opening api getplayerstatus, "
                                     "error: %s" % e)
-                if retry_count < 5:
+                if retry_count < MAX_RETRY_COUNT_GET_PLAYER_STATUS:
                     self.logger.debug("retrying to open api getplayerstatus, "
                                       "retry count: %d" % retry_count)
-                    time.sleep(2)
+                    time.sleep(RETRY_INTERVAL_GET_PLAYER_STATUS)
                 else:
                     self.logger.error("gave up retrying to open api getplayerstatus, so quit, "
                                       "retry count: %d" % retry_count)
@@ -466,10 +476,10 @@ class NicoLive(object):
                 # possible case like connection time out
                 self.logger.warning(
                     "possible network error when connecting to comment server, error: %s" % e)
-                if retry_count < 5:
+                if retry_count < MAX_RETRY_COUNT_OPEN_COMMENT_SERVER_SOCKET:
                     self.logger.debug(
                         "retrying to connect to comment server, retry count: %d" % retry_count)
-                    time.sleep(1)
+                    time.sleep(RETRY_INTERVAL_OPEN_COMMENT_SERVER_SOCKET)
                 else:
                     self.logger.error(
                         "gave up retrying to connect to comment server so quit, "
@@ -604,16 +614,19 @@ class NicoLive(object):
                                       "error: %s" % e)
                     break
                 else:
-                    if e.code == "comingsoon":
-                        self.logger.debug("live is 'comingsoon', so retry, error: %s" % e)
-                        time.sleep(3)
+                    max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS
+                    if e.code in ["comingsoon", "block_now_count_overflow"]:
+                        self.logger.debug("live is '%s', so retry, error: %s" % (e.code, e))
+                        if e.code == "block_now_count_overflow":
+                            max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS_BNCO
+                        time.sleep(RETRY_INTERVAL_GET_PLAYER_STATUS)
                     else:
                         # possible case of session expiration, so clearing container and retry
                         self.logger.warning(
                             "caught irregular error in get_player_status(), error: %s" % e)
                         NicoLive.cookie_container = None
 
-                    if retry_count < 5:
+                    if retry_count < max_retry_count:
                         self.logger.debug(
                             "retrying get_player_status(), retry count: %s" % retry_count)
                     else:
