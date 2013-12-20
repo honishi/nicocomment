@@ -39,7 +39,7 @@ keys=root,alert
 class=handlers.RotatingFileHandler
 level=NOTSET
 formatter=default
-args=(os.getcwd() + "/log/nicocomment.log", 'a', (500*1024*1024), 9)
+args=(os.getcwd() + "/log/nicocomment.log", 'a', (100*1024*1024), 9)
 
 [handler_alert]
 class=handlers.RotatingFileHandler

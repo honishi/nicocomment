@@ -13,9 +13,7 @@ case "$1" in
     tail -F ${log}
     ;;
   error)
-    tail -F ${log} | \
-      grep --line-buffered -P -i "error" | \
-      grep --line-buffered -P -v "require_community_member|notfound"
+    tail -F ${log} | grep --line-buffered -P "\[ERROR\]|\[WARNING\]|Traceback"
     ;;
   retry)
     tail -F ${log} | grep --line-buffered -P -i "retry"

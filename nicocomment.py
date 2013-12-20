@@ -10,20 +10,19 @@ NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.
 
 
 class NicoComment(object):
-# object life cycle
+# magic methods
     def __init__(self):
         logging.config.fileConfig(NICOCOMMENT_CONFIG)
-        self.logger = logging.getLogger("root")
-        self.logger.info("nicocomment initialized.")
+        logging.info("nicocomment initialized.")
 
     def __del__(self):
         pass
 
-# main
-    def open_alert(self):
+# public methods, main
+    def fork_alert(self):
         alert = nicoalert.NicoAlert()
-        alert.start()
+        alert.start_listening_alert()
 
 if __name__ == "__main__":
     nicocomment = NicoComment()
-    nicocomment.open_alert()
+    nicocomment.fork_alert()

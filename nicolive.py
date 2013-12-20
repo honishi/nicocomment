@@ -13,6 +13,7 @@ import time
 import re
 import cookielib
 from datetime import datetime as dt
+from datetime import timedelta
 import gzip
 import tweepy
 
@@ -28,6 +29,7 @@ MAX_RETRY_COUNT_GET_PLAYER_STATUS = 5
 MAX_RETRY_COUNT_GET_PLAYER_STATUS_BNCO = 30 * 60 / RETRY_INTERVAL_GET_PLAYER_STATUS
 MAX_RETRY_COUNT_OPEN_COMMENT_SERVER_SOCKET = 5
 
+ACTIVE_CALCULATION_INTERVAL = 10
 SOCKET_TIMEOUT = 60 * 30
 
 NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.config'
@@ -40,6 +42,10 @@ GET_PLAYER_STATUS_URL = "http://watch.live.nicovideo.jp/api/getplayerstatus?v=lv
 LIVE_TYPE_UNKNOWN = 0
 LIVE_TYPE_OFFICIAL = 1
 LIVE_TYPE_USER = 2
+
+LIVE_STATUS_TYPE_UNKNOWN = 0
+LIVE_STATUS_TYPE_STARTED = 1
+LIVE_STATUS_TYPE_FINISHED = 2
 
 LIVE_URL = "http://live.nicovideo.jp/watch/lv"
 
@@ -56,7 +62,6 @@ DEBUG_DUMMY_COMMENT_AND_EXIT = False
 
 class NicoLive(object):
 # class variables
-    logger = logging.getLogger()
     lock = threading.Lock()
     cookie_container = None
     sum_total_comment_count = 0
@@ -64,16 +69,33 @@ class NicoLive(object):
     last_status_update_user_id = None
     last_status_update_status = None
 
-# object life cycle
-    def __init__(self):
-        self.logger = logging.getLogger()
+    lives_active = {}
+    lives_info = {}
+
+# magic methods
+    def __init__(self, mail, password, community_id, live_id):
         self.log_file_obj = None
 
-        self.comment_count = 0
-        self.last_comment = ""
+        self.mail = mail
+        self.password = password
+        self.community_id = community_id
+        self.live_id = live_id
+
+        self.community_name = ""
+        self.live_name = ""
+        self.live_start_time = None
+        self.opened_live_threads = []
+        # self.comment_count = 0
+        # self.last_comment = ""
+        self.thread_local_vars = threading.local()
+        self.live_status = LIVE_TYPE_UNKNOWN
+
+        self.comments = []
+        self.logged_active = False
+        self.notified_active = False
 
         (self.force_debug_tweet, self.live_logging, self.monitoring_user_ids) = self.get_config()
-        # self.logger.debug("monitoring_user_ids: %s" % self.monitoring_user_ids)
+        # logging.debug("monitoring_user_ids: %s" % self.monitoring_user_ids)
 
         self.header_text = {}
         self.consumer_key = {}
@@ -86,21 +108,21 @@ class NicoLive(object):
              self.access_key[user_id], self.access_secret[user_id]) = (
                 self.get_twitter_credentials(user_id))
             """
-            self.logger.debug("user_id: " + user_id)
-            self.logger.debug("header_text: " + self.header_text[user_id])
-            self.logger.debug(
+            logging.debug("user_id: " + user_id)
+            logging.debug("header_text: " + self.header_text[user_id])
+            logging.debug(
                 "consumer_key: %s consumer_secret: ***" % self.consumer_key[user_id])
-            self.logger.debug(
+            logging.debug(
                 "access_key: %s access_secret: ***" % self.access_key[user_id])
             """
 
-        # self.logger.debug("*** nicolive __init__, %s" % threading.current_thread().ident)
+        self.log_filename = (LIVE_LOG_BASE_DIR + "." + dt.now().strftime('%Y%m%d') + '/' +
+                             self.live_id[len(self.live_id)-3:] + '/' + self.live_id + '.log')
 
     def __del__(self):
-        # self.logger.debug("*** nicolive __del__, %s" % threading.current_thread().ident)
         pass
 
-# config
+    # utility
     def get_config(self):
         config = ConfigParser.ConfigParser()
         config.read(NICOCOMMENT_CONFIG)
@@ -135,93 +157,153 @@ class NicoLive(object):
 
         return header_text, consumer_key, consumer_secret, access_key, access_secret
 
-# twitter
-    def update_twitter_status(self, live_id, user_id, comment):
-        self.logger.debug("entering to critical section: update_twitter_status")
+# public method, main
+    def start_listening_live(self):
+        # TODO: retry logic should be implemented here
+        try:
+            (self.community_name, self.live_name) = self.get_stream_info(self.live_id)
+            #logging.debug("*** stream info, community name: %s live name: %s" %
+            #              (self.community_name, self.live_name))
+            self.live_start_time = dt.now()
+        except Exception, e:
+            logging.error("could not get stream info: %s" % e)
 
-        with NicoLive.lock:
-            self.logger.debug("entered to critical section: update_twitter_status")
+        (room_label, host, port, thread) = (None, None, None, None)
+        retry_count = 0
+        max_retry_count = 0
+        retry_interval = 0
 
-            status = "[%s]\n%s\n%s%s".encode('UTF-8') % (
-                self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, live_id)
-
-            if (user_id == NicoLive.last_status_update_user_id and
-                    status == NicoLive.last_status_update_status):
-                self.logger.debug(
-                    "skipped duplicate tweet, user_id: %s status: [%s]" % (user_id, status))
-            else:
-                auth = tweepy.OAuthHandler(
-                    self.consumer_key[user_id], self.consumer_secret[user_id])
-                auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
-                try:
-                    tweepy.API(auth).update_status(status)
-                except tweepy.error.TweepError, error:
-                    # ("%s" % error) is unicode type; it's defined as TweepError.__str__ in
-                    # tweepy/error.py. so we need to convert it to str type here.
-                    # see http://bit.ly/jm5Zpc for details about string type conversion.
-                    error_str = ("%s" % error).encode('UTF-8')
-                    self.logger.error(
-                        "error in post, user_id: %s status: [%s] error_response: %s" %
-                        (user_id, status, error_str))
-
-            NicoLive.last_status_update_user_id = user_id
-            NicoLive.last_status_update_status = status
-
-            self.logger.debug("exiting from critical section: update_twitter_status")
-
-        self.logger.debug("exited from critical section: update_twitter_status")
-
-# live log
-    def open_live_log_file(self, log_filename):
-        if not os.path.exists(log_filename):
-            directory = os.path.dirname(log_filename)
+        while True:
+            cookie_container = NicoLive.get_cookie_container(self.mail, self.password)
             try:
-                os.makedirs(directory)
-            except OSError:
-                # already existed
-                pass
+                (room_label, host, port, thread) = self.get_player_status(
+                    cookie_container, self.live_id)
+                break
+            except UnexpectedStatusError, e:
+                # possible error code list: http://looooooooop.blog35.fc2.com/blog-entry-1159.html
+                if e.code == "require_community_member":
+                    logging.debug("live is 'require_community_member', so skip, "
+                                      "error: %s" % e)
+                    break
+                elif e.code in ["notfound", "deletedbyuser", "deletedbyvisor",
+                                "violated", "usertimeshift", "closed", "noauth"]:
+                    logging.debug("caught regular error in getplayerstatus, so quit, "
+                                      "error: %s" % e)
+                    break
+                else:
+                    max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS
+                    if e.code in ["comingsoon", "block_now_count_overflow"]:
+                        logging.debug("live is '%s', so retry, error: %s" % (e.code, e))
+                        if e.code == "block_now_count_overflow":
+                            max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS_BNCO
+                        retry_interval = RETRY_INTERVAL_GET_PLAYER_STATUS
+                    else:
+                        # possible case of session expiration, so clearing container and retry
+                        logging.warning(
+                            "caught irregular error in getplayerstatus, error: %s" % e)
+                        NicoLive.cookie_container = None
+                        retry_interval = 0
+            except Exception, e:
+                logging.warning("possible network error when opening getplayerstatus, "
+                                    "error: %s" % e)
+                max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS
+                retry_interval = RETRY_INTERVAL_GET_PLAYER_STATUS
+
+            if retry_count < max_retry_count:
+                logging.debug("retrying to open getplayerstatus, "
+                                  "retry count: %d" % retry_count)
             else:
-                self.logger.debug("directory %s created." % directory)
+                logging.error("gave up retrying to open getplayerstatus, so quit, "
+                                  "retry count: %d" % retry_count)
+                break
 
-        file_obj = open(log_filename, 'a')
-        self.logger.debug("opened live log file: %s" % log_filename)
+            time.sleep(retry_interval)
+            retry_count += 1
 
-        return file_obj
+        if (room_label is not None and
+                host is not None and port is not None and thread is not None):
 
-    def log_live(self, message):
-        self.log_file_obj.write(message + "\n")
-        self.log_file_obj.flush()
+            NicoLive.lives_active[self.live_id] = 0
+            NicoLive.lives_info[self.live_id] = (self.community_id, self.live_id,
+                self.community_name, self.live_name, self.live_start_time)
 
-    def gzip_live_log_file(self, log_filename):
-        gzipped_log_filename = log_filename + '.gz'
+            self.comment_servers = self.get_comment_servers(room_label, host, port, thread)
 
-        if not os.path.exists(log_filename):
-            self.logger.debug("gzip requested log file not found, log file: %s" % log_filename)
+            if self.live_logging:
+                self.log_file_obj = self.open_live_log_file()
+
+            self.live_status = LIVE_STATUS_TYPE_STARTED
+            self.start_active_calculation_thread()
+            self.add_live_thread()
+
+            for live_thread in self.opened_live_threads:
+                live_thread.join()
+            self.live_status = LIVE_STATUS_TYPE_FINISHED
+
+            # logging.debug("finished all sub threads")
+            if self.live_logging:
+                self.log_file_obj.close()
+                self.gzip_live_log_file()
+
+            NicoLive.lives_active.pop(self.live_id)
+            NicoLive.lives_info.pop(self.live_id)
+
+    def open_comment_server(self, room_position, host, port, thread):
+        self.thread_local_vars.room_position = room_position
+        self.thread_local_vars.comment_count = 0
+        self.thread_local_vars.last_comment = ""
+
+        if self.live_logging and DEBUG_DUMMY_COMMENT_AND_EXIT:
+            self.log_live("dummy comment...")
+            self.log_file_obj.close()
             return
 
-        if os.path.exists(gzipped_log_filename):
-            self.logger.debug("gzipped log file already exists, "
-                              "gzipped log file: %s" % gzipped_log_filename)
+        sock = self.open_comment_server_socket(host, port, thread)
+        if not sock:
             return
+        logging.debug("*** opened live thread, server: %s, %s, %s" % (host, port, thread))
 
-        self.logger.debug("gzipping live log file: %s", log_filename)
+        if 1 < room_position:
+            message = u"opened 立ち見"
+            if room_position == 2:
+                message += u"B"
+            elif room_position == 3:
+                message += u"C"
+            message += u" live: %s community: %s\n" % (self.live_name, self.community_name)
+            self.update_twitter_status(self.monitoring_user_ids[0], message)
 
-        log_file = open(log_filename, 'rb')
-        gzipped_log_file = gzip.open(gzipped_log_filename, 'wb')
-        gzipped_log_file.writelines(log_file)
-        gzipped_log_file.close()
-        log_file.close()
-        os.remove(log_filename)
+        message = ""
+        while True:
+            try:
+                recved = sock.recv(1024)
+            except socket.timeout, e:
+                logging.debug("detected timeout at socket recv().")
+                break
+            should_close_connection = False
 
-        self.logger.debug("gzipped live log file: %s", gzipped_log_filename)
+            for character in recved:
+                if character == chr(0):
+                    # logging.debug("xml: %s" % message)
+                    if self.live_logging:
+                        self.log_live(message)
 
-# main
+                    should_close_connection = self.parse_thread_stream(message)
+                    message = ""
+                else:
+                    message += character
+            if recved == '' or should_close_connection:
+                # logging.debug("break")
+                break
+        logging.debug("*** closed live thread, server: %s, %s, %s comments: %s" %
+                          (host, port, thread, self.thread_local_vars.comment_count))
+
+# private method, niconico api
     @classmethod
     def get_cookie_container(cls, mail, password):
-        # cls.logger.debug("entering to critical section: get_cookie_container")
+        # logging.debug("entering to critical section: get_cookie_container")
 
         with cls.lock:
-            # cls.logger.debug("entered to critical section: get_cookie_container")
+            # logging.debug("entered to critical section: get_cookie_container")
             if cls.cookie_container is None:
                 retry_count = 0
                 while True:
@@ -231,26 +313,26 @@ class NicoLive(object):
                         opener.open(LOGIN_URL, "mail=%s&password=%s" % (mail, password))
                         cls.cookie_container = opener
                     except Exception, e:
-                        cls.logger.warning(
+                        logging.warning(
                             "possible network error when initializing cookie container, "
                             "error: %s" % e)
                         if retry_count < MAX_RETRY_COUNT_GET_COOKIE_CONTAINER:
-                            cls.logger.debug(
+                            logging.debug(
                                 "retrying cookie container initialization, retry count: %d" %
                                 retry_count)
                             time.sleep(RETRY_INTERVAL_GET_COOKIE_CONTAINER)
                         else:
-                            cls.logger.error(
+                            logging.error(
                                 "gave up retrying cookie container initialization, "
                                 "retry count: %d" % retry_count)
                             break   # = return None
                     else:
-                        cls.logger.debug("opened cookie container")
+                        logging.debug("opened cookie container")
                         break
                     retry_count += 1
 
-            # cls.logger.debug("exiting from critical section: get_cookie_container")
-        # cls.logger.debug("exited from critical section: get_cookie_container")
+            # logging.debug("exiting from critical section: get_cookie_container")
+        # logging.debug("exited from critical section: get_cookie_container")
 
         return cls.cookie_container
 
@@ -258,7 +340,7 @@ class NicoLive(object):
         res = urllib2.urlopen(GET_STREAM_INFO_URL + live_id)
         xml = res.read()
         element = etree.fromstring(xml)
-        # self.logger.debug(etree.tostring(element))
+        # logging.debug(etree.tostring(element))
 
         status = element.xpath("//getstreaminfo")[0].attrib["status"]
         # status = "fail"
@@ -276,28 +358,10 @@ class NicoLive(object):
         return community_name, live_name
 
     def get_player_status(self, cookie_container, live_id):
-        # TODO: integrate retry logic here with start() method below. here, we should raise
-        # some exception rather than UnexpectedStatusError. and it should be handled in start().
-        retry_count = 0
-        while True:
-            try:
-                res = cookie_container.open(GET_PLAYER_STATUS_URL + live_id)
-                break
-            except Exception, e:
-                self.logger.warning("possible network error when opening api getplayerstatus, "
-                                    "error: %s" % e)
-                if retry_count < MAX_RETRY_COUNT_GET_PLAYER_STATUS:
-                    self.logger.debug("retrying to open api getplayerstatus, "
-                                      "retry count: %d" % retry_count)
-                    time.sleep(RETRY_INTERVAL_GET_PLAYER_STATUS)
-                else:
-                    self.logger.error("gave up retrying to open api getplayerstatus, so quit, "
-                                      "retry count: %d" % retry_count)
-                    return
-                retry_count += 1
+        res = cookie_container.open(GET_PLAYER_STATUS_URL + live_id)
 
         element = etree.fromstring(res.read())
-        # self.logger.debug(etree.tostring(element))
+        # logging.debug(etree.tostring(element))
         status = element.xpath("//getplayerstatus")[0].attrib["status"]
         if status != 'ok':
             code = element.xpath("//getplayerstatus/error/code")[0].text
@@ -309,11 +373,29 @@ class NicoLive(object):
         port = int(element.xpath("//getplayerstatus/ms/port")[0].text)
         thread = int(element.xpath("//getplayerstatus/ms/thread")[0].text)
 
-        self.logger.debug("*** getplayerstatus, room_label: %s host: %s port: %s thread: %s" %
+        logging.debug("*** getplayerstatus, room_label: %s host: %s port: %s thread: %s" %
                           (room_label, host, port, thread))
         return room_label, host, port, thread
 
-    # comment server
+# private method, open comment server
+    def add_live_thread(self):
+        # room_position 0: arena, 1: stand_a, 2: ...
+        target_room_position = len(self.opened_live_threads)
+        if not target_room_position < len(self.comment_servers):
+            logging.warning("could not add live thread, opened: %d comment servers: %d" %
+                            (target_room_position, len(self.comment_servers)))
+            return
+
+        (host, port, thread) = self.comment_servers[target_room_position]
+        live_thread = threading.Thread(
+            name="%s,%s,%s" % (self.community_id, self.live_id, thread),
+            target=self.open_comment_server,
+            args=(target_room_position, host, port, thread))
+
+        self.opened_live_threads.append(live_thread)
+        live_thread.start()
+
+# private methods, comment server
     def split_host(self, host):
         matched_host = re.match(r'((?:o|)msg)(\d+)(\..+)', host)
         if not matched_host:
@@ -393,12 +475,12 @@ class NicoLive(object):
         matched_room = re.match('c(?:o|h)\d+', room_label)
         if matched_room:
             # arena
-            # self.logger.debug("no need to adjust the room")
+            # logging.debug("no need to adjust the room")
             distance = 0
         else:
             if live_type == LIVE_TYPE_OFFICIAL:
                 # TODO: temporary implementation
-                self.logger.warning("official live but could not parse the room label properly. "
+                logging.warning("official live but could not parse the room label properly. "
                                     "this is expected, cause it's still not implemented.")
                 pass
             elif live_type == LIVE_TYPE_USER:
@@ -413,13 +495,13 @@ class NicoLive(object):
                     elif stand_type == "C":
                         distance = 3
                 if distance == -1:
-                    self.logger.warning("could not parse room label: %s" % room_label)
+                    logging.warning("could not parse room label: %s" % room_label)
 
         return distance
 
     def get_comment_servers(self, room_label, host, port, thread):
         """
-        self.logger.debug(
+        logging.debug(
             "provided comment server, room_label: %s host: %s port: %s thread: %s" %
             (room_label, host, port, thread))
         """
@@ -427,10 +509,10 @@ class NicoLive(object):
 
         live_type = LIVE_TYPE_UNKNOWN
         if re.match(r'^o', host):
-            # self.logger.error(u'detected official live')
+            # logging.error(u'detected official live')
             live_type = LIVE_TYPE_OFFICIAL
         else:
-            # self.logger.debug(u'detected user/channel live')
+            # logging.debug(u'detected user/channel live')
             live_type = LIVE_TYPE_USER
 
         room_count = 0
@@ -454,17 +536,7 @@ class NicoLive(object):
 
         return comment_servers
 
-# public method
-    def open_comment_server(self, live_id, host, port, thread, log_filename=None):
-        if self.live_logging and log_filename:
-            self.log_file_obj = self.open_live_log_file(log_filename)
-
-            if DEBUG_DUMMY_COMMENT_AND_EXIT:
-                self.log_live("dummy comment...")
-                self.log_file_obj.close()
-                return
-
-        # main loop
+    def open_comment_server_socket(self, host, port, thread):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(SOCKET_TIMEOUT)
 
@@ -474,210 +546,277 @@ class NicoLive(object):
                 sock.connect((host, port))
             except Exception, e:
                 # possible case like connection time out
-                self.logger.warning(
+                logging.warning(
                     "possible network error when connecting to comment server, error: %s" % e)
                 if retry_count < MAX_RETRY_COUNT_OPEN_COMMENT_SERVER_SOCKET:
-                    self.logger.debug(
+                    logging.debug(
                         "retrying to connect to comment server, retry count: %d" % retry_count)
                     time.sleep(RETRY_INTERVAL_OPEN_COMMENT_SERVER_SOCKET)
                 else:
-                    self.logger.error(
+                    logging.error(
                         "gave up retrying to connect to comment server so quit, "
                         "retry count: %d" % retry_count)
-                    return
+                    return None
             else:
                 break
             retry_count += 1
 
         sock.sendall(('<thread thread="%s" version="20061206" res_form="-1"/>'
                       + chr(0)) % thread)
-        self.logger.debug("*** opened live thread, server: %s,%s,%s" % (host, port, thread))
-        message = ""
-        while True:
-            try:
-                recved = sock.recv(1024)
-            except socket.timeout, e:
-                self.logger.debug("detected timeout at socket recv().")
-                break
-            should_close_connection = False
 
-            for character in recved:
-                if character == chr(0):
-                    if self.live_logging and log_filename:
-                        self.log_live(message)
+        return sock
 
-                    # self.logger.debug("server: %s,%s,%s xml: %s" %
-                    #                   (host, port, thread, message))
-                    # wrap message using dummy "elements" tag to avoid parse error
-                    message = "<elements>" + message + "</elements>"
+# private methods, stream parser
+    def parse_chat_element(self, chat):
+        # logging.debug(etree.tostring(chat))
+        user_id = chat.attrib.get('user_id')
+        premium = chat.attrib.get('premium')
+        if premium is None:
+            premium = "0"
+        comment = chat.text
 
-                    try:
-                        element = etree.fromstring(message)
-                    except etree.XMLSyntaxError, e:
-                        self.logger.warning("nicolive xml parse error: %s" % e)
-                        self.logger.debug("xml: %s" % message)
+        return user_id, premium, comment
 
-                    try:
-                        thread_element = element.xpath("//elements/thread")
-                        if 0 < len(thread_element):
-                            # self.logger.debug("server: %s,%s,%s xml: %s" %
-                            #                   (host, port, thread, message))
-                            result_code = thread_element[0].attrib.get('resultcode')
-                            if result_code == "1":
-                                # no comments will be provided from this thread
-                                should_close_connection = True
-                                break
-                        else:
-                            chats = element.xpath("//elements/chat")
-                            if 1 < len(chats):
-                                # self.logger.debug("xml: %s" % message)
-                                pass
-                            for chat in chats:
-                                # self.logger.debug(etree.tostring(chat))
-                                user_id = chat.attrib.get('user_id')
-                                premium = chat.attrib.get('premium')
-                                if premium is None:
-                                    premium = "0"
-                                comment = chat.text
-                                if comment == self.last_comment:
-                                    continue
-                                self.last_comment = comment
+    def check_user_id(self, user_id, comment):
+        tweeted = False
 
-                                self.comment_count += 1
-                                NicoLive.sum_total_comment_count += 1
+        target_user_ids = self.monitoring_user_ids
+        if self.force_debug_tweet:
+            target_user_ids = [user_id]
 
-                                for monitoring_user_id in self.monitoring_user_ids:
-                                    if self.force_debug_tweet:
-                                        user_id = monitoring_user_id
-                                    if user_id == monitoring_user_id:
-                                        self.update_twitter_status(live_id, user_id, comment)
-                                        # uncomment this to simulate duplicate tweet
-                                        # self.update_twitter_status(live_id, user_id, comment)
-                                    if self.force_debug_tweet:
-                                        should_close_connection = True
-                                        break
+        for monitoring_user_id in target_user_ids:
+            if user_id == monitoring_user_id:
+                self.update_twitter_status(user_id, comment)
+                # uncomment this to simulate duplicate tweet
+                # self.update_twitter_status(user_id, comment)
+                tweeted = True
 
-                                if premium in ['2', '3'] and comment == "/disconnect":
-                                    # see the references below for details of the conbination of
-                                    # premium attribute value and disconnect command:
-                                    # - http://www.yukun.info/blog/2008/08/python-if-for-in.html
-                                    # - https://twitter.com/Hemus_/status/6766945512
-                                    # self.logger.debug(
-                                    #     "detected command: %s w/ premium: %s" %
-                                    #     (comment, premium))
-                                    # self.logger.debug("disconnect, xml: %s" % message)
-                                    should_close_connection = True
-                                    break
-                    except KeyError:
-                        self.logger.debug("received unrecognized data.")
-                    message = ""
-                else:
-                    message += character
-            if recved == '' or should_close_connection:
-                # self.logger.debug("break")
-                break
-        # self.logger.debug("%s, (socket closed.)" % live_id)
-        self.logger.debug("*** closed live thread, server: %s,%s,%s comments: %s" %
-                          (host, port, thread, self.comment_count))
+        return tweeted
 
-        if self.live_logging and log_filename:
-            self.log_file_obj.close()
+    def check_ifseetno(self, comment):
+        if len(self.opened_live_threads) == 4:
+            # logging.debug("detected ifseetno, but already opened max live threads")
+            pass
+        elif (self.thread_local_vars.room_position + 1 == len(self.opened_live_threads) and
+                re.match(r'/hb ifseetno', comment)):
+            logging.debug("detected ifseetno in current last room, so open new thread")
+            self.add_live_thread()
 
-    def start(self, mail, password, community_id, live_id):
-        """
+    def check_disconnect(self, premium, comment):
+        should_close_connection = False
+
+        if premium in ['2', '3'] and comment == "/disconnect":
+            # see the references below for details of the conbination of premium
+            # attribute value and disconnect command:
+            # - http://www.yukun.info/blog/2008/08/python-if-for-in.html
+            # - https://twitter.com/Hemus_/status/6766945512
+            # logging.debug("detected command: %s w/ premium: %s" %
+            #                   (comment, premium))
+            # logging.debug("disconnect, xml: %s" % message)
+            should_close_connection = True
+
+        return should_close_connection
+
+    def parse_thread_stream(self, message):
+        should_close_connection = False
+        # wrap message using dummy "elements" tag to avoid parse error
+        message = "<elements>" + message + "</elements>"
+
         try:
-            (community_name, live_name) = self.get_stream_info(live_id)
-            self.logger.debug(
-                "*** stream info, community name: %s live name: %s" %
-                (community_name, live_name))
-        except Exception, e:
-            self.logger.debug("could not get stream info: %s" % e)
-        """
+            element = etree.fromstring(message)
+        except etree.XMLSyntaxError, e:
+            logging.warning("nicolive xml parse error: %s" % e)
+            logging.debug("xml: %s" % message)
 
-        (room_label, host, port, thread) = (None, None, None, None)
-        retry_count = 0
-        while True:
-            cookie_container = NicoLive.get_cookie_container(mail, password)
-            try:
-                (room_label, host, port, thread) = self.get_player_status(
-                    cookie_container, live_id)
-                break
-            except UnexpectedStatusError, e:
-                # possible error code list: http://looooooooop.blog35.fc2.com/blog-entry-1159.html
-                if e.code == "require_community_member":
-                    self.logger.debug("live is 'require_community_member', so skip, "
-                                      "error: %s" % e)
-                    break
-                elif e.code in ["notfound", "deletedbyuser", "deletedbyvisor",
-                                "violated", "usertimeshift", "closed", "noauth"]:
-                    self.logger.debug("caught regular error in get_player_status(), so quit, "
-                                      "error: %s" % e)
-                    break
-                else:
-                    max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS
-                    if e.code in ["comingsoon", "block_now_count_overflow"]:
-                        self.logger.debug("live is '%s', so retry, error: %s" % (e.code, e))
-                        if e.code == "block_now_count_overflow":
-                            max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS_BNCO
-                        time.sleep(RETRY_INTERVAL_GET_PLAYER_STATUS)
-                    else:
-                        # possible case of session expiration, so clearing container and retry
-                        self.logger.warning(
-                            "caught irregular error in get_player_status(), error: %s" % e)
-                        NicoLive.cookie_container = None
+        try:
+            thread_element = element.xpath("//elements/thread")
+            if 0 < len(thread_element):
+                result_code = thread_element[0].attrib.get('resultcode')
+                if result_code == "1":
+                    # logging.debug("thread xml: %s" % message)
+                    # no comments will be provided from this thread
+                    should_close_connection = True
+            else:
+                chats = element.xpath("//elements/chat")
+                if 1 < len(chats):
+                    # logging.debug("chat xml: %s" % message)
+                    pass
+                for chat in chats:
+                    user_id, premium, comment = self.parse_chat_element(chat)
 
-                    if retry_count < max_retry_count:
-                        self.logger.debug(
-                            "retrying get_player_status(), retry count: %s" % retry_count)
-                    else:
-                        self.logger.error(
-                            "gave up retrying get_player_status(), so quit, retry count: %s" %
-                            retry_count)
+                    if comment == self.thread_local_vars.last_comment:
+                        continue
+                    self.thread_local_vars.last_comment = comment
+
+                    self.thread_local_vars.comment_count += 1
+                    NicoLive.sum_total_comment_count += 1
+                    self.comments.append((dt.now(), premium, user_id, comment))
+
+                    tweeted = self.check_user_id(user_id, comment)
+                    if tweeted and self.force_debug_tweet:
+                        should_close_connection = True
                         break
-            retry_count += 1
 
-        if (room_label is not None and
-                host is not None and port is not None and thread is not None):
-            comment_servers = self.get_comment_servers(room_label, host, port, thread)
-            # self.logger.debug("comment servers: %s" % comment_servers)
+                    self.check_ifseetno(comment)
 
-            log_filename = (LIVE_LOG_BASE_DIR + "." + dt.now().strftime('%Y%m%d') + '/' +
-                            live_id[len(live_id)-3:] + '/' + live_id + '.log')
-            ts = []
-            for (host, port, thread) in comment_servers:
-                nicolive = NicoLive()
-                t = threading.Thread(name="%s,%s,%s" % (community_id, live_id, thread),
-                                     target=nicolive.open_comment_server,
-                                     args=(live_id, host, port, thread, log_filename))
-                ts.append(t)
-                t.start()
+                    should_close_connection = self.check_disconnect(premium, comment)
+                    if should_close_connection:
+                        break
+        except KeyError:
+            logging.debug("received unrecognized data.")
 
-            for t in ts:
-                t.join()
+        return should_close_connection
 
-            # self.logger.debug("finished all sub threads")
-            if self.live_logging:
-                self.gzip_live_log_file(log_filename)
+# private method, calcurating active
+    def start_active_calculation_thread(self):
+        calculation_thread = threading.Thread(
+            name="%s,%s,active" % (self.community_id, self.live_id),
+            target=self.calculate_active)
+        calculation_thread.start()
+
+    def calculate_active(self):
+        while True:
+            if self.live_status == LIVE_STATUS_TYPE_FINISHED:
+                break
+
+            # if self.notified_active:
+            #     return
+
+            active_calcuration_duration = 60 * 10
+            unique_users = []
+            current_datetime = dt.now()
+
+            for index in xrange(len(self.comments)-1, -1, -1):
+                (comment_datetime, premium, user_id, comment) = self.comments[index]
+
+                # premium 0: non-paid user, 1: paid user
+                if not premium in ["0", "1"]:
+                    continue
+
+                if (current_datetime - comment_datetime >
+                        timedelta(seconds=active_calcuration_duration)):
+                    break
+
+                if not unique_users.count(user_id):
+                    unique_users.append(user_id)
+    
+            active = len(unique_users)
+            NicoLive.lives_active[self.live_id] = active
+
+            message = u"active: %d live: %s community: %s (%s-)\n" % (
+                active, self.live_name, self.community_name,
+                self.live_start_time.strftime('%Y/%m/%d %H:%M'))
+    
+            if 20 < active and not self.logged_active:
+                logging.info(message)
+                self.logged_active = True
+    
+            if 100 < active and not self.notified_active:
+                logging.info(message)
+                self.update_twitter_status(self.monitoring_user_ids[0], message)
+                self.notified_active = True
+
+            time.sleep(ACTIVE_CALCULATION_INTERVAL)
+
+# private method, twitter
+    def update_twitter_status(self, user_id, comment):
+        logging.debug("entering to critical section: update_twitter_status")
+
+        with NicoLive.lock:
+            logging.debug("entered to critical section: update_twitter_status")
+
+            status = "[%s]\n%s\n%s%s".encode('UTF-8') % (
+                self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, self.live_id)
+
+            if (user_id == NicoLive.last_status_update_user_id and
+                    status == NicoLive.last_status_update_status):
+                logging.debug(
+                    "skipped duplicate tweet, user_id: %s status: [%s]" % (user_id, status))
+            else:
+                auth = tweepy.OAuthHandler(
+                    self.consumer_key[user_id], self.consumer_secret[user_id])
+                auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
+                try:
+                    tweepy.API(auth).update_status(status)
+                except tweepy.error.TweepError, error:
+                    # ("%s" % error) is unicode type; it's defined as TweepError.__str__ in
+                    # tweepy/error.py. so we need to convert it to str type here.
+                    # see http://bit.ly/jm5Zpc for details about string type conversion.
+                    error_str = ("%s" % error).encode('UTF-8')
+                    logging.error(
+                        "error in post, user_id: %s status: [%s] error_response: %s" %
+                        (user_id, status, error_str))
+
+            NicoLive.last_status_update_user_id = user_id
+            NicoLive.last_status_update_status = status
+
+            logging.debug("exiting from critical section: update_twitter_status")
+
+        logging.debug("exited from critical section: update_twitter_status")
+
+# private methods, live log
+    def open_live_log_file(self):
+        if not os.path.exists(self.log_filename):
+            directory = os.path.dirname(self.log_filename)
+            try:
+                os.makedirs(directory)
+            except OSError:
+                # already existed
+                pass
+            else:
+                logging.debug("directory %s created." % directory)
+
+        file_obj = open(self.log_filename, 'a')
+        logging.debug("opened live log file: %s" % self.log_filename)
+
+        return file_obj
+
+    def log_live(self, message):
+        self.log_file_obj.write(message + "\n")
+        self.log_file_obj.flush()
+
+    def gzip_live_log_file(self):
+        gzipped_log_filename = self.log_filename + '.gz'
+
+        if not os.path.exists(self.log_filename):
+            logging.debug("gzip requested log file not found, log file: %s" % self.log_filename)
+            return
+
+        if os.path.exists(gzipped_log_filename):
+            logging.debug("gzipped log file already exists, "
+                              "gzipped log file: %s" % gzipped_log_filename)
+            return
+
+        logging.debug("gzipping live log file: %s", self.log_filename)
+
+        log_file = open(self.log_filename, 'rb')
+        gzipped_log_file = gzip.open(gzipped_log_filename, 'wb')
+        gzipped_log_file.writelines(log_file)
+        gzipped_log_file.close()
+        log_file.close()
+        os.remove(self.log_filename)
+
+        logging.debug("gzipped live log file: %s", gzipped_log_filename)
 
 
 if __name__ == "__main__":
     logging.config.fileConfig(NICOCOMMENT_CONFIG)
 
     # """
-    nicolive = NicoLive()
-    nicolive.start(os.sys.argv[1], os.sys.argv[2], 0, os.sys.argv[3])
+    nicolive = NicoLive(os.sys.argv[1], os.sys.argv[2], None, os.sys.argv[3])
+    nicolive.start_listening_live()
     # """
 
     """
-    nicolive = NicoLive()
-    nicolive.update_twitter_status(0, "784552", u"日本語")
-    nicolive.update_twitter_status(0, "784552", u"日本語")
-    nicolive.update_twitter_status(0, "784552", u"abc")
-    nicolive.update_twitter_status(0, "784552", u"日本語")
+    nicolive = NicoLive(None, None, None, None)
+    nicolive.update_twitter_status("784552", u"日本語")
+    nicolive.update_twitter_status("784552", u"日本語")
+    nicolive.update_twitter_status("784552", u"abc")
+    nicolive.update_twitter_status("784552", u"日本語")
     """
 
     """
-    nicolive = NicoLive()
+    nicolive = NicoLive(None, None, None, None)
     # user
     comment_servers = nicolive.get_comment_servers(
         u"co12345", "msg103.live.nicovideo.jp", 2808, 1314071859)
