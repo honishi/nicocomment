@@ -58,6 +58,10 @@ COMMENT_SERVER_PORT_USER_LAST = 2814
 
 # DEBUG_DUMMY_COMMENT_AND_EXIT = True
 DEBUG_DUMMY_COMMENT_AND_EXIT = False
+# DEBUG_ENABLE_ACTIVE = True
+DEBUG_ENABLE_ACTIVE = False
+# DEBUG_ENABLE_TWEET_WHEN_OPENING_STAND_ROOM = True
+DEBUG_ENABLE_TWEET_WHEN_OPENING_STAND_ROOM = False
 
 
 class NicoLive(object):
@@ -183,12 +187,12 @@ class NicoLive(object):
                 # possible error code list: http://looooooooop.blog35.fc2.com/blog-entry-1159.html
                 if e.code == "require_community_member":
                     logging.debug("live is 'require_community_member', so skip, "
-                                      "error: %s" % e)
+                                  "error: %s" % e)
                     break
                 elif e.code in ["notfound", "deletedbyuser", "deletedbyvisor",
                                 "violated", "usertimeshift", "closed", "noauth"]:
                     logging.debug("caught regular error in getplayerstatus, so quit, "
-                                      "error: %s" % e)
+                                  "error: %s" % e)
                     break
                 else:
                     max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS
@@ -205,16 +209,16 @@ class NicoLive(object):
                         retry_interval = 0
             except Exception, e:
                 logging.warning("possible network error when opening getplayerstatus, "
-                                    "error: %s" % e)
+                                "error: %s" % e)
                 max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS
                 retry_interval = RETRY_INTERVAL_GET_PLAYER_STATUS
 
             if retry_count < max_retry_count:
                 logging.debug("retrying to open getplayerstatus, "
-                                  "retry count: %d" % retry_count)
+                              "retry count: %d" % retry_count)
             else:
                 logging.error("gave up retrying to open getplayerstatus, so quit, "
-                                  "retry count: %d" % retry_count)
+                              "retry count: %d" % retry_count)
                 break
 
             time.sleep(retry_interval)
@@ -224,8 +228,9 @@ class NicoLive(object):
                 host is not None and port is not None and thread is not None):
 
             NicoLive.lives_active[self.live_id] = 0
-            NicoLive.lives_info[self.live_id] = (self.community_id, self.live_id,
-                self.community_name, self.live_name, self.live_start_time)
+            NicoLive.lives_info[self.live_id] = (
+                self.community_id, self.live_id, self.community_name,
+                self.live_name, self.live_start_time)
 
             self.comment_servers = self.get_comment_servers(room_label, host, port, thread)
 
@@ -233,7 +238,8 @@ class NicoLive(object):
                 self.log_file_obj = self.open_live_log_file()
 
             self.live_status = LIVE_STATUS_TYPE_STARTED
-            self.start_active_calculation_thread()
+            if DEBUG_ENABLE_ACTIVE:
+                self.start_active_calculation_thread()
             self.add_live_thread()
 
             for live_thread in self.opened_live_threads:
@@ -270,7 +276,8 @@ class NicoLive(object):
             elif room_position == 3:
                 message += u"C"
             message += u" live: %s community: %s\n" % (self.live_name, self.community_name)
-            self.update_twitter_status(self.monitoring_user_ids[0], message)
+            if DEBUG_ENABLE_TWEET_WHEN_OPENING_STAND_ROOM:
+                self.update_twitter_status(self.monitoring_user_ids[0], message)
 
         message = ""
         while True:
@@ -295,7 +302,7 @@ class NicoLive(object):
                 # logging.debug("break")
                 break
         logging.debug("*** closed live thread, server: %s, %s, %s comments: %s" %
-                          (host, port, thread, self.thread_local_vars.comment_count))
+                      (host, port, thread, self.thread_local_vars.comment_count))
 
 # private method, niconico api
     @classmethod
@@ -374,7 +381,7 @@ class NicoLive(object):
         thread = int(element.xpath("//getplayerstatus/ms/thread")[0].text)
 
         logging.debug("*** getplayerstatus, room_label: %s host: %s port: %s thread: %s" %
-                          (room_label, host, port, thread))
+                      (room_label, host, port, thread))
         return room_label, host, port, thread
 
 # private method, open comment server
@@ -481,7 +488,7 @@ class NicoLive(object):
             if live_type == LIVE_TYPE_OFFICIAL:
                 # TODO: temporary implementation
                 logging.warning("official live but could not parse the room label properly. "
-                                    "this is expected, cause it's still not implemented.")
+                                "this is expected, cause it's still not implemented.")
                 pass
             elif live_type == LIVE_TYPE_USER:
                 matched_room = re.match(u'立ち見(\w)列', room_label)
@@ -699,18 +706,18 @@ class NicoLive(object):
 
                 if not unique_users.count(user_id):
                     unique_users.append(user_id)
-    
+
             active = len(unique_users)
             NicoLive.lives_active[self.live_id] = active
 
             message = u"active: %d live: %s community: %s (%s-)\n" % (
                 active, self.live_name, self.community_name,
                 self.live_start_time.strftime('%Y/%m/%d %H:%M'))
-    
+
             if 20 < active and not self.logged_active:
                 logging.info(message)
                 self.logged_active = True
-    
+
             if 100 < active and not self.notified_active:
                 logging.info(message)
                 self.update_twitter_status(self.monitoring_user_ids[0], message)
@@ -784,7 +791,7 @@ class NicoLive(object):
 
         if os.path.exists(gzipped_log_filename):
             logging.debug("gzipped log file already exists, "
-                              "gzipped log file: %s" % gzipped_log_filename)
+                          "gzipped log file: %s" % gzipped_log_filename)
             return
 
         logging.debug("gzipping live log file: %s", self.log_filename)

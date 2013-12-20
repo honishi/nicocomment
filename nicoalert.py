@@ -23,6 +23,7 @@ GET_ALERT_STATUS_URL = 'http://live.nicovideo.jp/api/getalertstatus'
 MAX_RECENT_LIVES_COUNT = 500
 LOG_STATISTICS_INTERVAL = 10
 
+
 class NicoAlert(object):
 # magic methods
     def __init__(self):
@@ -200,10 +201,11 @@ class NicoAlert(object):
             index = 0
             for (active, community_id, live_id, community_name, live_name,
                     live_start_time) in self.calculate_active_ranking():
-                logging.info("ranking-%d: [%d][%s][%s][%s][%s][%s]" %
-                    (index, active, community_id, community_name, live_id,
-                     live_name, live_start_time))
-                index += 1
+                if 0 < active:
+                    logging.info("ranking-%2d: [%d][%s][%s][%s][%s][%s]" % (
+                        index+1, active, community_id, community_name, live_id,
+                        live_name, live_start_time))
+                    index += 1
 
             time.sleep(LOG_STATISTICS_INTERVAL)
 
@@ -213,7 +215,7 @@ class NicoAlert(object):
 
         # logging.info("aaa")
         for live_id, active in sorted(
-                nicolive.NicoLive.lives_active.items(), key=lambda x:x[1], reverse=True):
+                nicolive.NicoLive.lives_active.items(), key=lambda x: x[1], reverse=True):
             # logging.info("bbb: %s %d" % (live_id, active))
             try:
                 (community_id, live_id, community_name, live_name, live_start_time) = (
