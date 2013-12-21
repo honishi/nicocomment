@@ -19,11 +19,16 @@ import tweepy
 
 from nicoerror import UnexpectedStatusError
 
+ACTIVE_LOGGING_THREASHOLD = 20
+ACTIVE_TWEET_THREASHOLD = 100
+
 RETRY_INTERVAL_GET_COOKIE_CONTAINER = 1
+RETRY_INTERVAL_GET_STREAM_INFO = 3
 RETRY_INTERVAL_GET_PLAYER_STATUS = 3
 RETRY_INTERVAL_OPEN_COMMENT_SERVER_SOCKET = 1
 
 MAX_RETRY_COUNT_GET_COOKIE_CONTAINER = 5
+MAX_RETRY_COUNT_GET_STREAM_INFO = 5
 MAX_RETRY_COUNT_GET_PLAYER_STATUS = 5
 # block_now_count_overflow case, retrying for 30 min
 MAX_RETRY_COUNT_GET_PLAYER_STATUS_BNCO = 30 * 60 / RETRY_INTERVAL_GET_PLAYER_STATUS
@@ -56,12 +61,10 @@ COMMENT_SERVER_PORT_OFFICIAL_LAST = 2817
 COMMENT_SERVER_PORT_USER_FIRST = 2805
 COMMENT_SERVER_PORT_USER_LAST = 2814
 
+CREDENTIAL_KEY_ALL = "all"
+
 # DEBUG_DUMMY_COMMENT_AND_EXIT = True
 DEBUG_DUMMY_COMMENT_AND_EXIT = False
-# DEBUG_ENABLE_ACTIVE = True
-DEBUG_ENABLE_ACTIVE = False
-# DEBUG_ENABLE_TWEET_WHEN_OPENING_STAND_ROOM = True
-DEBUG_ENABLE_TWEET_WHEN_OPENING_STAND_ROOM = False
 
 
 class NicoLive(object):
@@ -70,8 +73,8 @@ class NicoLive(object):
     cookie_container = None
     sum_total_comment_count = 0
 
-    last_status_update_user_id = None
-    last_status_update_status = None
+    last_tweeted_credential_key = None
+    last_tweeted_status = None
 
     lives_active = {}
     lives_info = {}
@@ -89,35 +92,61 @@ class NicoLive(object):
         self.live_name = ""
         self.live_start_time = None
         self.opened_live_threads = []
-        # self.comment_count = 0
-        # self.last_comment = ""
         self.thread_local_vars = threading.local()
         self.live_status = LIVE_TYPE_UNKNOWN
 
         self.comments = []
+        self.should_recalculate_active = True
         self.logged_active = False
-        self.notified_active = False
+        self.tweeted_active = False
 
-        (self.force_debug_tweet, self.live_logging, self.monitoring_user_ids) = self.get_config()
-        # logging.debug("monitoring_user_ids: %s" % self.monitoring_user_ids)
+        config = ConfigParser.ConfigParser()
+        config.read(NICOCOMMENT_CONFIG)
 
-        self.header_text = {}
+        self.force_debug_tweet, self.live_logging = self.get_basic_config(config)
+        """
+        logging.debug("force_debug_tweet: %s live_logging: %s" %
+                      (self.force_debug_tweet, self.live_logging))
+        """
+
         self.consumer_key = {}
         self.consumer_secret = {}
         self.access_key = {}
         self.access_secret = {}
-        for user_id in self.monitoring_user_ids:
-            (self.header_text[user_id],
-             self.consumer_key[user_id], self.consumer_secret[user_id],
-             self.access_key[user_id], self.access_secret[user_id]) = (
-                self.get_twitter_credentials(user_id))
+
+        self.target_users = []
+        self.header_text = {}
+        for (user, header_text, consumer_key, consumer_secret, access_key,
+                access_secret) in self.get_user_config(config):
+            self.target_users.append(user)
+            self.header_text[self.target_users[-1]] = header_text
+            self.consumer_key[self.target_users[-1]] = consumer_key
+            self.consumer_secret[self.target_users[-1]] = consumer_secret
+            self.access_key[self.target_users[-1]] = access_key
+            self.access_secret[self.target_users[-1]] = access_secret
             """
-            logging.debug("user_id: " + user_id)
-            logging.debug("header_text: " + self.header_text[user_id])
-            logging.debug(
-                "consumer_key: %s consumer_secret: ***" % self.consumer_key[user_id])
-            logging.debug(
-                "access_key: %s access_secret: ***" % self.access_key[user_id])
+            logging.debug("user: %s" % self.target_users[-1])
+            logging.debug("header_text: %s" % self.header_text[self.target_users[-1]])
+            logging.debug("consumer_key: %s consumer_secret: xxxxx" %
+                          self.consumer_key[self.target_users[-1]])
+            logging.debug("access_key: %s access_secret: xxxxx" %
+                          self.access_key[self.target_users[-1]])
+            """
+
+        self.target_communities = []
+        for (community, consumer_key, consumer_secret, access_key,
+                access_secret) in self.get_community_config(config):
+            self.target_communities.append(community)
+            self.consumer_key[self.target_communities[-1]] = consumer_key
+            self.consumer_secret[self.target_communities[-1]] = consumer_secret
+            self.access_key[self.target_communities[-1]] = access_key
+            self.access_secret[self.target_communities[-1]] = access_secret
+            """
+            logging.debug("community: %s" % self.target_communities[-1])
+            logging.debug("consumer_key: %s consumer_secret: xxxxx" %
+                          self.consumer_key[self.target_communities[-1]])
+            logging.debug("access_key: %s access_secret: xxxxx" %
+                          self.access_key[self.target_communities[-1]])
             """
 
         self.log_filename = (LIVE_LOG_BASE_DIR + "." + dt.now().strftime('%Y%m%d') + '/' +
@@ -127,50 +156,83 @@ class NicoLive(object):
         pass
 
     # utility
-    def get_config(self):
-        config = ConfigParser.ConfigParser()
-        config.read(NICOCOMMENT_CONFIG)
+    def get_basic_config(self, config):
+        section = "nicolive"
 
-        if config.get("nicolive", "force_debug_tweet").lower() == "true":
-            force_debug_tweet = True
+        force_debug_tweet = self.get_bool_for_option(config, section, "force_debug_tweet")
+        live_logging = self.get_bool_for_option(config, section, "live_logging")
+
+        return force_debug_tweet, live_logging
+
+    def get_user_config(self, config):
+        result = []
+
+        for section in config.sections():
+            matched = re.match(r'user-(.+)', section)
+            if matched:
+                user = matched.group(1)
+                header_text = config.get(section, "header_text")
+                result.append(
+                    (user, header_text) + self.get_twitter_credentials(config, section))
+
+        return result
+
+    def get_community_config(self, config):
+        result = []
+
+        for section in config.sections():
+            matched = re.match(r'community-(.+)', section)
+            if matched:
+                community = matched.group(1)
+                result.append(
+                    (community,) + self.get_twitter_credentials(config, section))
+
+        return result
+
+    # utility, again
+    def get_bool_for_option(self, config, section, option):
+        if config.has_option(section, option):
+            option = config.getboolean(section, option)
         else:
-            force_debug_tweet = False
+            option = False
 
-        if config.get("nicolive", "live_logging").lower() == "true":
-            live_logging = True
-        else:
-            live_logging = False
+        return option
 
-        try:
-            monitoring_user_ids = config.get("nicolive", "monitoring_user_ids").split(',')
-        except ConfigParser.NoOptionError, unused_error:
-            monitoring_user_ids = None
-
-        return force_debug_tweet, live_logging, monitoring_user_ids
-
-    def get_twitter_credentials(self, user_id):
-        config = ConfigParser.ConfigParser()
-        config.read(NICOCOMMENT_CONFIG)
-        section = user_id
-
-        header_text = config.get(section, "header_text")
+    def get_twitter_credentials(self, config, section):
         consumer_key = config.get(section, "consumer_key")
         consumer_secret = config.get(section, "consumer_secret")
         access_key = config.get(section, "access_key")
         access_secret = config.get(section, "access_secret")
 
-        return header_text, consumer_key, consumer_secret, access_key, access_secret
+        return consumer_key, consumer_secret, access_key, access_secret
 
-# public method, main
+# public methods, main
     def start_listening_live(self):
-        # TODO: retry logic should be implemented here
-        try:
-            (self.community_name, self.live_name) = self.get_stream_info(self.live_id)
-            #logging.debug("*** stream info, community name: %s live name: %s" %
-            #              (self.community_name, self.live_name))
-            self.live_start_time = dt.now()
-        except Exception, e:
-            logging.error("could not get stream info: %s" % e)
+        retry_count = 0
+        while True:
+            try:
+                (self.community_name, self.live_name) = self.get_stream_info(self.live_id)
+                #logging.debug("*** stream info, community name: %s live name: %s" %
+                #              (self.community_name, self.live_name))
+                self.live_start_time = dt.now()
+                break
+            except Exception, e:
+                logging.warning("could not get stream info: %s" % e)
+
+                if retry_count < MAX_RETRY_COUNT_GET_STREAM_INFO:
+                    logging.debug("retrying to open getstreaminfo, "
+                                  "retry count: %d" % retry_count)
+                else:
+                    logging.error("gave up retrying to open getstreaminfo, so quit, "
+                                  "retry count: %d" % retry_count)
+                    return
+                time.sleep(RETRY_INTERVAL_GET_STREAM_INFO)
+                retry_count += 1
+
+        for community_id in self.target_communities:
+            if self.community_id == community_id:
+                status = self.create_start_live_status()
+                self.update_twitter_status(community_id, status)
 
         (room_label, host, port, thread) = (None, None, None, None)
         retry_count = 0
@@ -186,8 +248,8 @@ class NicoLive(object):
             except UnexpectedStatusError, e:
                 # possible error code list: http://looooooooop.blog35.fc2.com/blog-entry-1159.html
                 if e.code == "require_community_member":
-                    logging.debug("live is 'require_community_member', so skip, "
-                                  "error: %s" % e)
+                    logging.debug("live is 'require_community_member', so skip.")
+                    # "error: %s" % e
                     break
                 elif e.code in ["notfound", "deletedbyuser", "deletedbyvisor",
                                 "violated", "usertimeshift", "closed", "noauth"]:
@@ -238,8 +300,7 @@ class NicoLive(object):
                 self.log_file_obj = self.open_live_log_file()
 
             self.live_status = LIVE_STATUS_TYPE_STARTED
-            if DEBUG_ENABLE_ACTIVE:
-                self.start_active_calculation_thread()
+            self.start_active_calculation_thread()
             self.add_live_thread()
 
             for live_thread in self.opened_live_threads:
@@ -269,21 +330,11 @@ class NicoLive(object):
             return
         logging.debug("*** opened live thread, server: %s, %s, %s" % (host, port, thread))
 
-        if 1 < room_position:
-            message = u"opened 立ち見"
-            if room_position == 2:
-                message += u"B"
-            elif room_position == 3:
-                message += u"C"
-            message += u" live: %s community: %s\n" % (self.live_name, self.community_name)
-            if DEBUG_ENABLE_TWEET_WHEN_OPENING_STAND_ROOM:
-                self.update_twitter_status(self.monitoring_user_ids[0], message)
-
         message = ""
         while True:
             try:
                 recved = sock.recv(1024)
-            except socket.timeout, e:
+            except socket.timeout, unused_e:
                 logging.debug("detected timeout at socket recv().")
                 break
             should_close_connection = False
@@ -304,7 +355,7 @@ class NicoLive(object):
         logging.debug("*** closed live thread, server: %s, %s, %s comments: %s" %
                       (host, port, thread, self.thread_local_vars.comment_count))
 
-# private method, niconico api
+# private methods, niconico api
     @classmethod
     def get_cookie_container(cls, mail, password):
         # logging.debug("entering to critical section: get_cookie_container")
@@ -384,7 +435,7 @@ class NicoLive(object):
                       (room_label, host, port, thread))
         return room_label, host, port, thread
 
-# private method, open comment server
+# private methods, open comment server
     def add_live_thread(self):
         # room_position 0: arena, 1: stand_a, 2: ...
         target_room_position = len(self.opened_live_threads)
@@ -470,7 +521,7 @@ class NicoLive(object):
         if host_prefix is None or host_number is None or host_surfix is None:
             return (host, port, thread)
 
-        for i in xrange(distance):
+        for unused_i in xrange(distance):
             (host_number, port, thread) = self.previous_comment_server(
                 live_type, host_number, port, thread)
 
@@ -535,7 +586,7 @@ class NicoLive(object):
             room_count = 4
 
         (host_prefix, host_number, host_surfix) = self.split_host(host)
-        for i in xrange(room_count):
+        for unused_i in xrange(room_count):
             comment_servers.append(
                 (host_prefix + str(host_number) + host_surfix, port, thread))
             (host_number, port, thread) = self.next_comment_server(
@@ -574,6 +625,26 @@ class NicoLive(object):
         return sock
 
 # private methods, stream parser
+    def notify_opening_room(self):
+        room_position = self.thread_local_vars.room_position
+        if 0 < room_position:
+            room_name = u"立ち見"
+            if room_position == 1:
+                room_name += u"A"
+            elif room_position == 2:
+                room_name += u"B"
+            elif room_position == 3:
+                room_name += u"C"
+            else:
+                room_name += u"X"
+            status = self.create_stand_room_status(room_name)
+
+            if CREDENTIAL_KEY_ALL in self.target_communities:
+                self.update_twitter_status(CREDENTIAL_KEY_ALL, status)
+
+            if self.community_id in self.target_communities:
+                self.update_twitter_status(self.community_id, status)
+
     def parse_chat_element(self, chat):
         # logging.debug(etree.tostring(chat))
         user_id = chat.attrib.get('user_id')
@@ -587,15 +658,16 @@ class NicoLive(object):
     def check_user_id(self, user_id, comment):
         tweeted = False
 
-        target_user_ids = self.monitoring_user_ids
+        target_user_ids = self.target_users
         if self.force_debug_tweet:
             target_user_ids = [user_id]
 
         for monitoring_user_id in target_user_ids:
             if user_id == monitoring_user_id:
-                self.update_twitter_status(user_id, comment)
+                status = self.create_monitored_comment_status(user_id, comment)
+                self.update_twitter_status(user_id, status)
                 # uncomment this to simulate duplicate tweet
-                # self.update_twitter_status(user_id, comment)
+                # self.update_twitter_status(user_id, status)
                 tweeted = True
 
         return tweeted
@@ -643,6 +715,9 @@ class NicoLive(object):
                     # logging.debug("thread xml: %s" % message)
                     # no comments will be provided from this thread
                     should_close_connection = True
+                else:
+                    # successfully opened thread
+                    self.notify_opening_room()
             else:
                 chats = element.xpath("//elements/chat")
                 if 1 < len(chats):
@@ -658,6 +733,7 @@ class NicoLive(object):
                     self.thread_local_vars.comment_count += 1
                     NicoLive.sum_total_comment_count += 1
                     self.comments.append((dt.now(), premium, user_id, comment))
+                    self.should_recalculate_active = True
 
                     tweeted = self.check_user_id(user_id, comment)
                     if tweeted and self.force_debug_tweet:
@@ -674,7 +750,7 @@ class NicoLive(object):
 
         return should_close_connection
 
-# private method, calcurating active
+# private methods, calcurating active
     def start_active_calculation_thread(self):
         calculation_thread = threading.Thread(
             name="%s,%s,active" % (self.community_id, self.live_id),
@@ -686,63 +762,94 @@ class NicoLive(object):
             if self.live_status == LIVE_STATUS_TYPE_FINISHED:
                 break
 
-            # if self.notified_active:
-            #     return
+            if self.should_recalculate_active:
+                active_calcuration_duration = 60 * 10
+                unique_users = []
+                current_datetime = dt.now()
 
-            active_calcuration_duration = 60 * 10
-            unique_users = []
-            current_datetime = dt.now()
+                for index in xrange(len(self.comments)-1, -1, -1):
+                    (comment_datetime, premium, user_id, comment) = self.comments[index]
 
-            for index in xrange(len(self.comments)-1, -1, -1):
-                (comment_datetime, premium, user_id, comment) = self.comments[index]
+                    # premium 0: non-paid user, 1: paid user
+                    if not premium in ["0", "1"]:
+                        continue
 
-                # premium 0: non-paid user, 1: paid user
-                if not premium in ["0", "1"]:
-                    continue
+                    if (current_datetime - comment_datetime >
+                            timedelta(seconds=active_calcuration_duration)):
+                        break
 
-                if (current_datetime - comment_datetime >
-                        timedelta(seconds=active_calcuration_duration)):
-                    break
+                    if not unique_users.count(user_id):
+                        unique_users.append(user_id)
 
-                if not unique_users.count(user_id):
-                    unique_users.append(user_id)
+                active = len(unique_users)
+                NicoLive.lives_active[self.live_id] = active
+                self.should_recalculate_active = False
 
-            active = len(unique_users)
-            NicoLive.lives_active[self.live_id] = active
+                if ACTIVE_LOGGING_THREASHOLD < active and not self.logged_active:
+                    status = self.create_active_live_status(ACTIVE_LOGGING_THREASHOLD)
+                    logging.info(status)
+                    self.logged_active = True
 
-            message = u"active: %d live: %s community: %s (%s-)\n" % (
-                active, self.live_name, self.community_name,
-                self.live_start_time.strftime('%Y/%m/%d %H:%M'))
+                if ACTIVE_TWEET_THREASHOLD < active and not self.tweeted_active:
+                    status = self.create_active_live_status(ACTIVE_TWEET_THREASHOLD)
+                    logging.info(status)
 
-            if 20 < active and not self.logged_active:
-                logging.info(message)
-                self.logged_active = True
-
-            if 100 < active and not self.notified_active:
-                logging.info(message)
-                self.update_twitter_status(self.monitoring_user_ids[0], message)
-                self.notified_active = True
+                    if CREDENTIAL_KEY_ALL in self.target_communities:
+                        self.update_twitter_status(CREDENTIAL_KEY_ALL, status)
+                    if self.community_id in self.target_communities:
+                        self.update_twitter_status(self.community_id, status)
+                    self.tweeted_active = True
 
             time.sleep(ACTIVE_CALCULATION_INTERVAL)
 
-# private method, twitter
-    def update_twitter_status(self, user_id, comment):
+# private methods, twitter
+    # user-related
+    def create_monitored_comment_status(self, user_id, comment):
+        status = u"【%s】\n%s\n%s%s\n(%s)".encode('UTF-8') % (
+            self.header_text[user_id], comment.encode('UTF-8'),
+            LIVE_URL, self.live_id, self.community_name)
+        return status
+
+    # community-related
+    def create_start_live_status(self):
+        status = u"【放送開始】%s（%s）%s%s" % (
+            self.live_name, self.community_name, LIVE_URL, self.live_id)
+        return status
+
+    def create_active_live_status(self, active):
+        status = u"【アクティブ%d+/開始%d分】%s（%s）%s%s" % (
+            active, self.elapsed_minutes(),
+            self.live_name, self.community_name,
+            LIVE_URL, self.live_id)
+        # self.live_start_time.strftime('%Y/%m/%d %H:%M')
+        return status
+
+    def create_stand_room_status(self, room_name):
+        status = u"【%sオープン/開始%d分】%s（%s）%s%s" % (
+            room_name, self.elapsed_minutes(),
+            self.live_name, self.community_name,
+            LIVE_URL, self.live_id)
+        return status
+
+    def elapsed_minutes(self):
+        return (dt.now() - self.live_start_time).seconds / 60
+
+    # main
+    def update_twitter_status(self, credential_key, status):
         logging.debug("entering to critical section: update_twitter_status")
 
         with NicoLive.lock:
             logging.debug("entered to critical section: update_twitter_status")
 
-            status = "[%s]\n%s\n%s%s".encode('UTF-8') % (
-                self.header_text[user_id], comment.encode('UTF-8'), LIVE_URL, self.live_id)
-
-            if (user_id == NicoLive.last_status_update_user_id and
-                    status == NicoLive.last_status_update_status):
-                logging.debug(
-                    "skipped duplicate tweet, user_id: %s status: [%s]" % (user_id, status))
+            if (credential_key == NicoLive.last_tweeted_credential_key and
+                    status == NicoLive.last_tweeted_status):
+                logging.debug("skipped duplicate tweet, credential_key: %s status: [%s]" %
+                              (credential_key, status))
             else:
-                auth = tweepy.OAuthHandler(
-                    self.consumer_key[user_id], self.consumer_secret[user_id])
-                auth.set_access_token(self.access_key[user_id], self.access_secret[user_id])
+                auth = tweepy.OAuthHandler(self.consumer_key[credential_key],
+                                           self.consumer_secret[credential_key])
+                auth.set_access_token(self.access_key[credential_key],
+                                      self.access_secret[credential_key])
                 try:
                     tweepy.API(auth).update_status(status)
                 except tweepy.error.TweepError, error:
@@ -751,13 +858,12 @@ class NicoLive(object):
                     # see http://bit.ly/jm5Zpc for details about string type conversion.
                     error_str = ("%s" % error).encode('UTF-8')
                     logging.error(
-                        "error in post, user_id: %s status: [%s] error_response: %s" %
-                        (user_id, status, error_str))
+                        "error in post, credential_key: %s status: [%s] error_response: %s" %
+                        (credential_key, status, error_str))
 
-            NicoLive.last_status_update_user_id = user_id
-            NicoLive.last_status_update_status = status
-
-            logging.debug("exiting from critical section: update_twitter_status")
+            NicoLive.last_tweeted_credential_key = credential_key
+            NicoLive.last_tweeted_status = status
+            # logging.debug("exiting from critical section: update_twitter_status")
 
         logging.debug("exited from critical section: update_twitter_status")
 

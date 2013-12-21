@@ -20,7 +20,7 @@ NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.
 ANTENNA_URL = 'https://secure.nicovideo.jp/secure/login?site=nicolive_antenna'
 GET_ALERT_STATUS_URL = 'http://live.nicovideo.jp/api/getalertstatus'
 
-MAX_RECENT_LIVES_COUNT = 500
+MAX_RECENT_LIVES_COUNT = 10000
 LOG_STATISTICS_INTERVAL = 10
 
 
