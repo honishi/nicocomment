@@ -7,11 +7,38 @@ password = p@ssword
 
 [nicolive]
 # force_debug_tweet = true
-force_debug_tweet = false
 live_logging = true
-monitoring_user_ids = 12345
 
-[12345]
+[community-all]
+# @twitter_account
+consumer_key = xxxxxxxxxx
+consumer_secret = xxxxxxxxxx
+access_key = xxxxxxxxxx
+access_secret = xxxxxxxxxx
+
+[community-co12345]
+# @twitter_account
+consumer_key = xxxxxxxxxx
+consumer_secret = xxxxxxxxxx
+access_key = xxxxxxxxxx
+access_secret = xxxxxxxxxx
+
+[community-co67890]
+# @twitter_account
+consumer_key = xxxxxxxxxx
+consumer_secret = xxxxxxxxxx
+access_key = xxxxxxxxxx
+access_secret = xxxxxxxxxx
+
+[user-12345]
+header_text = xxxxx監視中
+# @twitter_account
+consumer_key = xxxxxxxxxx
+consumer_secret = xxxxxxxxxx
+access_key = xxxxxxxxxx
+access_secret = xxxxxxxxxx
+
+[user-67890]
 header_text = xxxxx監視中
 # @twitter_account
 consumer_key = xxxxxxxxxx
