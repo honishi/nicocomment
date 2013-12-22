@@ -98,7 +98,7 @@ class NicoLive(object):
         self.comments = []
         self.should_recalculate_active = True
         self.logged_active = False
-        self.tweeted_active = False
+        self.active_tweet_target = ACTIVE_TWEET_THREASHOLD
 
         config = ConfigParser.ConfigParser()
         config.read(NICOCOMMENT_CONFIG)
@@ -790,15 +790,15 @@ class NicoLive(object):
                     logging.info(status)
                     self.logged_active = True
 
-                if ACTIVE_TWEET_THREASHOLD < active and not self.tweeted_active:
-                    status = self.create_active_live_status(ACTIVE_TWEET_THREASHOLD)
+                if self.active_tweet_target < active:
+                    status = self.create_active_live_status(self.active_tweet_target)
                     logging.info(status)
+                    self.active_tweet_target += ACTIVE_TWEET_THREASHOLD
 
                     if CREDENTIAL_KEY_ALL in self.target_communities:
                         self.update_twitter_status(CREDENTIAL_KEY_ALL, status)
                     if self.community_id in self.target_communities:
                         self.update_twitter_status(self.community_id, status)
-                    self.tweeted_active = True
 
             time.sleep(ACTIVE_CALCULATION_INTERVAL)
 

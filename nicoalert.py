@@ -156,7 +156,10 @@ class NicoAlert(object):
                                         "received alert, live_id: %s community_id: %s "
                                         "user_id: %s" % (live_id, community_id, user_id))
 
-                                    self.handle_live(live_id, community_id, user_id)
+                                    if community_id == "official":
+                                        alert_logger.debug("skipped official live.")
+                                    else:
+                                        self.handle_live(live_id, community_id, user_id)
                                     self.received_live_count += 1
                     except KeyError:
                         logging.debug("received unknown information.")
