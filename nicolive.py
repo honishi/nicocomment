@@ -844,23 +844,23 @@ class NicoLive(object):
 
     # community-related
     def create_start_live_status(self):
-        status = u"【放送開始】%s（%s）%s%s" % (
-            self.live_name, self.community_name, LIVE_URL, self.live_id)
+        status = u"【放送開始】%s（%s）%s%s #%s" % (
+            self.live_name, self.community_name, LIVE_URL, self.live_id, self.community_id)
         return status
 
     def create_active_live_status(self, active):
-        status = u"【アクティブ%d+/開始%d分】%s（%s）%s%s" % (
+        status = u"【アクティブ%d+/開始%d分】%s（%s）%s%s #%s" % (
             active, self.elapsed_minutes(),
             self.live_name, self.community_name,
-            LIVE_URL, self.live_id)
+            LIVE_URL, self.live_id, self.community_id)
         # self.live_start_time.strftime('%Y/%m/%d %H:%M')
         return status
 
     def create_stand_room_status(self, room_name):
-        status = u"【%sオープン/開始%d分】%s（%s）%s%s" % (
+        status = u"【%sオープン/開始%d分】%s（%s）%s%s #%s" % (
             room_name, self.elapsed_minutes(),
             self.live_name, self.community_name,
-            LIVE_URL, self.live_id)
+            LIVE_URL, self.live_id, self.community_id)
         return status
 
     def elapsed_minutes(self):
