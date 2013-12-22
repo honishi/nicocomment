@@ -376,7 +376,7 @@ class NicoLive(object):
 
         logging.debug("*** closed live thread, server: %s, %s, %s comments: %s" %
                       (host, port, thread, self.thread_local_vars.comment_count))
-        NicoLive.all_opened_thread_ids.pop(thread)
+        NicoLive.all_opened_thread_ids.remove(thread)
 
 # private methods, niconico api
     @classmethod
