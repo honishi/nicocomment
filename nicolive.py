@@ -72,6 +72,7 @@ class NicoLive(object):
     lock = threading.Lock()
     cookie_container = None
     sum_total_comment_count = 0
+    all_opened_thread_ids = []
 
     last_tweeted_credential_key = None
     last_tweeted_status = None
@@ -322,38 +323,45 @@ class NicoLive(object):
 
         if self.live_logging and DEBUG_DUMMY_COMMENT_AND_EXIT:
             self.log_live("dummy comment...")
-            self.log_file_obj.close()
             return
+
+        if thread in NicoLive.all_opened_thread_ids:
+            logging.warning("live thread is already opened, so skip.")
+            return
+
+        logging.debug("*** opened live thread, server: %s, %s, %s" % (host, port, thread))
+        NicoLive.all_opened_thread_ids.append(thread)
 
         sock = self.open_comment_server_socket(host, port, thread)
-        if not sock:
-            return
-        logging.debug("*** opened live thread, server: %s, %s, %s" % (host, port, thread))
 
-        message = ""
-        while True:
-            try:
-                recved = sock.recv(1024)
-            except socket.timeout, unused_e:
-                logging.debug("detected timeout at socket recv().")
-                break
-            should_close_connection = False
+        if sock:
+            message = ""
+            while True:
+                try:
+                    recved = sock.recv(1024)
+                except socket.timeout, unused_e:
+                    logging.debug("detected timeout at socket recv().")
+                    break
+                should_close_connection = False
 
-            for character in recved:
-                if character == chr(0):
-                    # logging.debug("xml: %s" % message)
-                    if self.live_logging:
-                        self.log_live(message)
+                for character in recved:
+                    if character == chr(0):
+                        # logging.debug("xml: %s" % message)
+                        if self.live_logging:
+                            self.log_live(message)
 
-                    should_close_connection = self.parse_thread_stream(message)
-                    message = ""
-                else:
-                    message += character
-            if recved == '' or should_close_connection:
-                # logging.debug("break")
-                break
+                        should_close_connection = self.parse_thread_stream(message)
+                        message = ""
+                    else:
+                        message += character
+                if recved == '' or should_close_connection:
+                    # logging.debug("break")
+                    break
+            sock.close()
+
         logging.debug("*** closed live thread, server: %s, %s, %s comments: %s" %
                       (host, port, thread, self.thread_local_vars.comment_count))
+        NicoLive.all_opened_thread_ids.pop(thread)
 
 # private methods, niconico api
     @classmethod
