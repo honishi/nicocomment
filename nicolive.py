@@ -19,11 +19,12 @@ import tweepy
 
 from nicoerror import UnexpectedStatusError
 
+OPEN_ROOM_TWEET_THREASHOLD = 1
 ACTIVE_LOGGING_THREASHOLD = 20
 ACTIVE_TWEET_THREASHOLD = 100
 
 RETRY_INTERVAL_GET_COOKIE_CONTAINER = 1
-RETRY_INTERVAL_GET_STREAM_INFO = 3
+RETRY_INTERVAL_GET_STREAM_INFO = 2
 RETRY_INTERVAL_GET_PLAYER_STATUS = 3
 RETRY_INTERVAL_OPEN_COMMENT_SERVER_SOCKET = 1
 
@@ -65,6 +66,8 @@ CREDENTIAL_KEY_ALL = "all"
 
 # DEBUG_DUMMY_COMMENT_AND_EXIT = True
 DEBUG_DUMMY_COMMENT_AND_EXIT = False
+# DEBUG_LOG_COMMENT_TO_APP_LOG = True
+DEBUG_LOG_COMMENT_TO_APP_LOG = False
 
 
 class NicoLive(object):
@@ -209,13 +212,14 @@ class NicoLive(object):
 
 # public methods, main
     def start_listening_live(self):
+        self.live_start_time = dt.now()
+
         retry_count = 0
         while True:
             try:
                 (self.community_name, self.live_name) = self.get_stream_info(self.live_id)
                 #logging.debug("*** stream info, community name: %s live name: %s" %
                 #              (self.community_name, self.live_name))
-                self.live_start_time = dt.now()
                 break
             except Exception, e:
                 logging.warning("could not get stream info: %s" % e)
@@ -226,7 +230,9 @@ class NicoLive(object):
                 else:
                     logging.error("gave up retrying to open getstreaminfo, so quit, "
                                   "retry count: %d" % retry_count)
-                    return
+                    self.community_name = "n/a"
+                    self.live_name = "n/a"
+                    break
                 time.sleep(RETRY_INTERVAL_GET_STREAM_INFO)
                 retry_count += 1
 
@@ -295,14 +301,19 @@ class NicoLive(object):
                 self.community_id, self.live_id, self.community_name,
                 self.live_name, self.live_start_time)
 
-            self.comment_servers = self.get_comment_servers(room_label, host, port, thread)
+            live_type = self.get_live_type_with_host(host)
+            distance_from_arena = self.get_distance_from_arena(live_type, room_label)
+
+            self.comment_servers = self.get_comment_servers(
+                live_type, distance_from_arena, host, port, thread)
 
             if self.live_logging:
                 self.log_file_obj = self.open_live_log_file()
 
             self.live_status = LIVE_STATUS_TYPE_STARTED
             self.start_active_calculation_thread()
-            self.add_live_thread()
+            for unused_i in xrange(distance_from_arena+1):
+                self.add_live_thread()
 
             for live_thread in self.opened_live_threads:
                 live_thread.join()
@@ -319,7 +330,8 @@ class NicoLive(object):
     def open_comment_server(self, room_position, host, port, thread):
         self.thread_local_vars.room_position = room_position
         self.thread_local_vars.comment_count = 0
-        self.thread_local_vars.last_comment = ""
+        self.thread_local_vars.tweeted_open_room = False
+        # self.thread_local_vars.last_comment = ""
 
         if self.live_logging and DEBUG_DUMMY_COMMENT_AND_EXIT:
             self.log_live("dummy comment...")
@@ -349,6 +361,9 @@ class NicoLive(object):
                         # logging.debug("xml: %s" % message)
                         if self.live_logging:
                             self.log_live(message)
+
+                        if DEBUG_LOG_COMMENT_TO_APP_LOG:
+                            logging.debug(message)
 
                         should_close_connection = self.parse_thread_stream(message)
                         message = ""
@@ -535,7 +550,7 @@ class NicoLive(object):
 
         return (host_prefix + str(host_number) + host_surfix, port, thread)
 
-    def calculate_distance_from_arena(self, live_type, room_label):
+    def get_distance_from_arena(self, live_type, room_label):
         distance = -1
 
         matched_room = re.match('c(?:o|h)\d+', room_label)
@@ -565,15 +580,9 @@ class NicoLive(object):
 
         return distance
 
-    def get_comment_servers(self, room_label, host, port, thread):
-        """
-        logging.debug(
-            "provided comment server, room_label: %s host: %s port: %s thread: %s" %
-            (room_label, host, port, thread))
-        """
-        comment_servers = []
-
+    def get_live_type_with_host(self, host):
         live_type = LIVE_TYPE_UNKNOWN
+
         if re.match(r'^o', host):
             # logging.error(u'detected official live')
             live_type = LIVE_TYPE_OFFICIAL
@@ -581,8 +590,18 @@ class NicoLive(object):
             # logging.debug(u'detected user/channel live')
             live_type = LIVE_TYPE_USER
 
+        return live_type
+
+    def get_comment_servers(self, live_type, distance_from_arena, host, port, thread):
+        """
+        logging.debug(
+            "provided comment server, live_type: %d distance_from_arena: %d "
+            "host: %s port: %s thread: %s" %
+            (live_type, distance_from_arena, host, port, thread))
+        """
+        comment_servers = []
+
         room_count = 0
-        distance_from_arena = self.calculate_distance_from_arena(live_type, room_label)
         if distance_from_arena < 0:
             # could not calculate distance from arena,
             # so use host, port and thread with no change
@@ -633,8 +652,7 @@ class NicoLive(object):
         return sock
 
 # private methods, stream parser
-    def notify_opening_room(self):
-        room_position = self.thread_local_vars.room_position
+    def notify_opening_room(self, room_position):
         if 0 < room_position:
             room_name = u"立ち見"
             if room_position == 1:
@@ -725,7 +743,7 @@ class NicoLive(object):
                     should_close_connection = True
                 else:
                     # successfully opened thread
-                    self.notify_opening_room()
+                    pass
             else:
                 chats = element.xpath("//elements/chat")
                 if 1 < len(chats):
@@ -734,14 +752,20 @@ class NicoLive(object):
                 for chat in chats:
                     user_id, premium, comment = self.parse_chat_element(chat)
 
-                    if comment == self.thread_local_vars.last_comment:
-                        continue
-                    self.thread_local_vars.last_comment = comment
+                    # if comment == self.thread_local_vars.last_comment:
+                    #     continue
+                    # self.thread_local_vars.last_comment = comment
 
                     self.thread_local_vars.comment_count += 1
                     NicoLive.sum_total_comment_count += 1
                     self.comments.append((dt.now(), premium, user_id, comment))
                     self.should_recalculate_active = True
+
+                    if (not self.thread_local_vars.tweeted_open_room and
+                            OPEN_ROOM_TWEET_THREASHOLD <= self.thread_local_vars.room_position and
+                            not re.match(r'^/', comment)):
+                        self.thread_local_vars.tweeted_open_room = True
+                        self.notify_opening_room(self.thread_local_vars.room_position)
 
                     tweeted = self.check_user_id(user_id, comment)
                     if tweeted and self.force_debug_tweet:
@@ -923,68 +947,5 @@ class NicoLive(object):
 if __name__ == "__main__":
     logging.config.fileConfig(NICOCOMMENT_CONFIG)
 
-    # """
     nicolive = NicoLive(os.sys.argv[1], os.sys.argv[2], None, os.sys.argv[3])
     nicolive.start_listening_live()
-    # """
-
-    """
-    nicolive = NicoLive(None, None, None, None)
-    nicolive.update_twitter_status("784552", u"日本語")
-    nicolive.update_twitter_status("784552", u"日本語")
-    nicolive.update_twitter_status("784552", u"abc")
-    nicolive.update_twitter_status("784552", u"日本語")
-    """
-
-    """
-    nicolive = NicoLive(None, None, None, None)
-    # user
-    comment_servers = nicolive.get_comment_servers(
-        u"co12345", "msg103.live.nicovideo.jp", 2808, 1314071859)
-    logging.debug(comment_servers)
-
-    comment_servers = nicolive.get_comment_servers(
-        u"立ち見A列", "msg103.live.nicovideo.jp", 2808, 1314071859)
-    logging.debug(comment_servers)
-
-    comment_servers = nicolive.get_comment_servers(
-        u"立ち見A列", "msg103.live.nicovideo.jp", 2805, 1314071859)
-    logging.debug(comment_servers)
-
-    comment_servers = nicolive.get_comment_servers(
-        u"立ち見A列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    logging.debug(comment_servers)
-
-    comment_servers = nicolive.get_comment_servers(
-        u"立ち見B列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    logging.debug(comment_servers)
-
-    comment_servers = nicolive.get_comment_servers(
-        u"立ち見C列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    logging.debug(comment_servers)
-
-    comment_servers = nicolive.get_comment_servers(
-        u"立ち見Z列", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    logging.debug(comment_servers)
-
-    comment_servers = nicolive.get_comment_servers(
-        u"xxx", "msg101.live.nicovideo.jp", 2805, 1314071859)
-    logging.debug(comment_servers)
-
-    # official
-    servers = nicolive.get_comment_servers(
-        u"ch12345", "omsg101.live.nicovideo.jp", 2815, 1314071859)
-    logging.debug(servers)
-
-    servers = nicolive.get_comment_servers(
-        u"ch12345", "omsg104.live.nicovideo.jp", 2815, 1314071859)
-    logging.debug(servers)
-
-    servers = nicolive.get_comment_servers(
-        u"ch12345", "omsg103.live.nicovideo.jp", 2817, 1314071859)
-    logging.debug(servers)
-
-    servers = nicolive.get_comment_servers(
-        u"xxx", "omsg103.live.nicovideo.jp", 2815, 1314071859)
-    logging.debug(servers)
-    """
