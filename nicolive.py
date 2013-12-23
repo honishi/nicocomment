@@ -19,9 +19,10 @@ import tweepy
 
 from nicoerror import UnexpectedStatusError
 
-OPEN_ROOM_TWEET_THREASHOLD = 1
+OPEN_ROOM_TWEET_THREASHOLD = 2
 ACTIVE_LOGGING_THREASHOLD = 20
-ACTIVE_TWEET_THREASHOLD = 100
+ACTIVE_TWEET_INITIAL_THREASHOLD = 100
+ACTIVE_TWEET_INCREMENT_VALUE = 100
 
 RETRY_INTERVAL_GET_COOKIE_CONTAINER = 1
 RETRY_INTERVAL_GET_STREAM_INFO = 2
@@ -79,6 +80,7 @@ class NicoLive(object):
 
     last_tweeted_credential_key = None
     last_tweeted_status = None
+    tweets = []
 
     lives_active = {}
     lives_info = {}
@@ -102,7 +104,7 @@ class NicoLive(object):
         self.comments = []
         self.should_recalculate_active = True
         self.logged_active = False
-        self.active_tweet_target = ACTIVE_TWEET_THREASHOLD
+        self.active_tweet_target = ACTIVE_TWEET_INITIAL_THREASHOLD
 
         config = ConfigParser.ConfigParser()
         config.read(NICOCOMMENT_CONFIG)
@@ -824,8 +826,7 @@ class NicoLive(object):
 
                 if self.active_tweet_target < active:
                     status = self.create_active_live_status(self.active_tweet_target)
-                    logging.info(status)
-                    self.active_tweet_target += ACTIVE_TWEET_THREASHOLD
+                    self.active_tweet_target += ACTIVE_TWEET_INCREMENT_VALUE
 
                     if CREDENTIAL_KEY_ALL in self.target_communities:
                         self.update_twitter_status(CREDENTIAL_KEY_ALL, status)
@@ -884,6 +885,7 @@ class NicoLive(object):
                                       self.access_secret[credential_key])
                 try:
                     tweepy.API(auth).update_status(status)
+                    self.log_tweet(credential_key, status)
                 except tweepy.error.TweepError, error:
                     # ("%s" % error) is unicode type; it's defined as TweepError.__str__ in
                     # tweepy/error.py. so we need to convert it to str type here.
@@ -898,6 +900,28 @@ class NicoLive(object):
             # logging.debug("exiting from critical section: update_twitter_status")
 
         logging.debug("exited from critical section: update_twitter_status")
+
+    def log_tweet(self, credential_key, status):
+        logging.info("status successfully updated, credential_key: %s status: %s" %
+                     (credential_key, status))
+
+        tweet_watching_minutes = 60
+
+        current_datetime = dt.now()
+        tweets_to_be_deleted = []
+
+        for tweet in NicoLive.tweets:
+            tweet_datetime, status = tweet
+            if current_datetime - tweet_datetime > timedelta(minutes=tweet_watching_minutes):
+                tweets_to_be_deleted.append(tweet)
+
+        for tweet in tweets_to_be_deleted:
+            NicoLive.tweets.remove(tweet)
+
+        NicoLive.tweets.append((current_datetime, status))
+
+        logging.info("tweets counts is %d in last %d minutes." %
+                     (len(NicoLive.tweets), tweet_watching_minutes))
 
 # private methods, live log
     def open_live_log_file(self):
