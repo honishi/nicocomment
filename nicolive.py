@@ -80,7 +80,7 @@ class NicoLive(object):
 
     last_tweeted_credential_key = None
     last_tweeted_status = None
-    tweets = []
+    tweets = {}
 
     lives_active = {}
     lives_info = {}
@@ -905,23 +905,27 @@ class NicoLive(object):
         logging.info("status successfully updated, credential_key: %s status: %s" %
                      (credential_key, status))
 
+        if not credential_key in NicoLive.tweets:
+           NicoLive.tweets[credential_key] = []
+        tweets = NicoLive.tweets[credential_key]
+
         tweet_watching_minutes = 60
 
         current_datetime = dt.now()
         tweets_to_be_deleted = []
 
-        for tweet in NicoLive.tweets:
+        for tweet in tweets:
             tweet_datetime, status = tweet
             if current_datetime - tweet_datetime > timedelta(minutes=tweet_watching_minutes):
                 tweets_to_be_deleted.append(tweet)
 
         for tweet in tweets_to_be_deleted:
-            NicoLive.tweets.remove(tweet)
+            tweets.remove(tweet)
 
-        NicoLive.tweets.append((current_datetime, status))
+        tweets.append((current_datetime, status))
 
-        logging.info("tweets counts is %d in last %d minutes." %
-                     (len(NicoLive.tweets), tweet_watching_minutes))
+        logging.info("tweets counts in credential_key \"%s\" is %d in last %d minutes." %
+                     (credential_key, len(tweets), tweet_watching_minutes))
 
 # private methods, live log
     def open_live_log_file(self):
