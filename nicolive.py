@@ -819,7 +819,8 @@ class NicoLive(object):
                 NicoLive.lives_active[self.live_id] = active
                 self.should_recalculate_active = False
 
-                if ACTIVE_LOGGING_THREASHOLD < active and not self.logged_active:
+                # disabled
+                if False and ACTIVE_LOGGING_THREASHOLD < active and not self.logged_active:
                     status = self.create_active_live_status(ACTIVE_LOGGING_THREASHOLD)
                     logging.info(status)
                     self.logged_active = True
@@ -906,7 +907,7 @@ class NicoLive(object):
                      (credential_key, status))
 
         if not credential_key in NicoLive.tweets:
-           NicoLive.tweets[credential_key] = []
+            NicoLive.tweets[credential_key] = []
         tweets = NicoLive.tweets[credential_key]
 
         tweet_watching_minutes = 60
