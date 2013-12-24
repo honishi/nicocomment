@@ -62,10 +62,11 @@ class NicoAlert(object):
         # res_data = xml.fromstring(res.read())
         res_data = etree.fromstring(res.read())
         # logging.debug(etree.tostring(res_data))
+
         # sample response
-        #{'nicovideo_user_response': {'status': {'value': 'ok'},
-        #                             'ticket': {'value': 'xxx'},
-        #                             'value': '\n\t'}}
+        # {'nicovideo_user_response': {'status': {'value': 'ok'},
+        #                              'ticket': {'value': 'xxx'},
+        #                              'value': '\n\t'}}
 
         ticket = res_data.xpath("//ticket")[0].text
         logging.debug("ticket: %s" % ticket)
@@ -79,6 +80,7 @@ class NicoAlert(object):
         res_data = etree.fromstring(res.read())
         # logging.debug(etree.tostring(res_data))
         status = res_data.xpath("//getalertstatus")[0].attrib["status"]
+
         # sample response
         # {'getalertstatus':
         #     {'communities': {'community_id': {'value': 'co9320'}},
@@ -93,6 +95,7 @@ class NicoAlert(object):
         #      'user_name': {'value': 'miettal'},
         #      'user_prefecture': {'value': '12'},
         #      'user_sex': {'value': '1'}}}
+
         # if res_data.getalertstatus.status != 'ok' :
         if status != 'ok':
             raise nicoerror.NicoAuthorizationError
@@ -113,7 +116,7 @@ class NicoAlert(object):
 
         return communities, host, port, thread
 
-# private method, main sequence
+# private methods, main sequence
     def listen_alert(self, host, port, thread):
         alert_logger = logging.getLogger("alert")
 
@@ -121,8 +124,7 @@ class NicoAlert(object):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(60)
         sock.connect((host, port))
-        sock.sendall(('<thread thread="%s" version="20061206" res_form="-1"/>'
-                      + chr(0)) % thread)
+        sock.sendall('<thread thread="%s" version="20061206" res_form="-1"/>' % thread + chr(0))
 
         # schedule log timer
         self.kick_log_statistics()
@@ -153,8 +155,8 @@ class NicoAlert(object):
                                     # the stream is NOT the official one
                                     live_id, community_id, user_id = lives
                                     alert_logger.info(
-                                        "received alert, live_id: %s community_id: %s "
-                                        "user_id: %s" % (live_id, community_id, user_id))
+                                        "received alert, live_id: %-9s community_id: %-9s "
+                                        "user_id: %-9s" % (live_id, community_id, user_id))
 
                                     if community_id == "official":
                                         alert_logger.debug("skipped official live.")
@@ -189,50 +191,24 @@ class NicoAlert(object):
         except Exception, e:
             logging.error("failed to start nicolive thread, error: %s" % e)
 
-# private method, log statistics
+# private methods, log statistics
     def kick_log_statistics(self):
-        log_stat_thread = threading.Thread(target=self.log_statistics)
+        log_stat_thread = threading.Thread(
+            name="alert_statistics",
+            target=self.log_alert_statistics)
         log_stat_thread.start()
 
-    def log_statistics(self):
+    def log_alert_statistics(self):
         while True:
             logging.info(
-                "*** received lives: %s active live threads: %s sum total comments: %s" %
+                "received lives: %-5d live instances: %-5d threads: %-5d total comments: %-5d" %
                 (self.received_live_count,
-                 threading.active_count(), nicolive.NicoLive.sum_total_comment_count))
-
-            index = 0
-            for (active, community_id, live_id, community_name, live_name,
-                    live_start_time) in self.calculate_active_ranking():
-                if 0 < active:
-                    logging.info("ranking-%2d: [%d][%s][%s][%s][%s][%s]" % (
-                        index+1, active, community_id, community_name, live_id,
-                        live_name, live_start_time))
-                    index += 1
+                 len(nicolive.NicoLive.instances),
+                 threading.active_count(),
+                 nicolive.NicoLive.sum_total_comment_count))
 
             time.sleep(LOG_STATISTICS_INTERVAL)
 
-    def calculate_active_ranking(self):
-        ranking = []
-        index = 0
-
-        # logging.info("aaa")
-        for live_id, active in sorted(
-                nicolive.NicoLive.lives_active.items(), key=lambda x: x[1], reverse=True):
-            # logging.info("bbb: %s %d" % (live_id, active))
-            try:
-                (community_id, live_id, community_name, live_name, live_start_time) = (
-                    nicolive.NicoLive.lives_info[live_id])
-                ranking.append(
-                    (active, community_id, live_id, community_name, live_name, live_start_time))
-            except Exception, e:
-                logging.warning("unexpected error in creating active ranking, error: %s" % e)
-
-            if 20 < index:
-                break
-            index += 1
-
-        return ranking
 
 if __name__ == "__main__":
     nicoalert = NicoAlert()
