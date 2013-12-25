@@ -93,6 +93,10 @@ DEBUG_DUMMY_COMMENT_AND_EXIT = False
 # DEBUG_LOG_COMMENT_TO_APP_LOG = True
 DEBUG_LOG_COMMENT_TO_APP_LOG = False
 
+# for nicolive.py stand-alone test
+# RETRY_INTERVAL_GET_STREAM_INFO = 1
+# MAX_RETRY_COUNT_GET_STREAM_INFO = 2
+
 
 class NicoLive(object):
 # class variables
@@ -400,6 +404,12 @@ class NicoLive(object):
 
         return cls.cookie_container
 
+    def convert_to_unicode(self, s):
+        converted = s
+        if isinstance(s, str):
+            converted = unicode(s, 'utf8')
+        return converted
+
     def get_stream_info(self, live_id):
         res = urllib2.urlopen(GET_STREAM_INFO_URL + live_id)
         xml = res.read()
@@ -420,7 +430,7 @@ class NicoLive(object):
             logging.warning("response: %s" % xml)
             raise UnexpectedStatusError(status)
 
-        return community_name, live_name
+        return self.convert_to_unicode(community_name), self.convert_to_unicode(live_name)
 
     def get_player_status(self, cookie_container, live_id):
         res = cookie_container.open(GET_PLAYER_STATUS_URL + live_id)
@@ -738,22 +748,22 @@ class NicoLive(object):
             premium = "0"
         comment = chat.text
 
-        return user_id, premium, comment
+        return user_id, premium, self.convert_to_unicode(comment)
 
     def check_user_id(self, user_id, comment):
         tweeted = False
 
-        target_user_ids = self.target_users
         if self.force_debug_tweet:
-            target_user_ids = [user_id]
-
-        for monitoring_user_id in target_user_ids:
-            if user_id == monitoring_user_id:
-                status = self.create_monitored_comment_status(user_id, comment)
-                self.update_twitter_status(user_id, status)
-                # uncomment this to simulate duplicate tweet
-                # self.update_twitter_status(user_id, status)
-                tweeted = True
+            user_id = self.target_users[0]
+            status = self.create_monitored_comment_status(user_id, comment)
+            self.update_twitter_status(user_id, status)
+            tweeted = True
+        else:
+            for monitoring_user_id in self.target_users:
+                if user_id == monitoring_user_id:
+                    status = self.create_monitored_comment_status(user_id, comment)
+                    self.update_twitter_status(user_id, status)
+                    tweeted = True
 
         return tweeted
 
@@ -985,8 +995,8 @@ class NicoLive(object):
 # private methods, twitter
     # user-related
     def create_monitored_comment_status(self, user_id, comment):
-        status = u"【%s】\n%s\n%s%s\n(%s)".encode('UTF-8') % (
-            self.header_text[user_id], comment.encode('UTF-8'),
+        status = u"【%s】\n%s\n%s%s\n(%s)" % (
+            unicode(self.header_text[user_id], 'utf8'), comment,
             LIVE_URL, self.live_id, self.community_name)
         return status
 

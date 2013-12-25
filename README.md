@@ -2,19 +2,19 @@ nicocomment
 ==
 an implementation to monitor all niconama broadcast lives.
 * tweet popular lives using the following indexes.
-    1. active users in the live
-    2. participants in the live
+    1. active users
+    2. participants
 * tweet specified user's comments.
 
 sample
 -------------
-poplular lives.
+popular lives.
 
-(screenshot here.)
+![sample](./sample/screenshot_popular.png)
 
-user comment.
+user comments.
 
-![sample](./sample/screenshot.png)
+![sample](./sample/screenshot_user.png)
 
 * http://www.nicovideo.jp/watch/sm22365097
 * http://www.nicovideo.jp/watch/sm22431441
