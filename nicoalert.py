@@ -205,7 +205,7 @@ class NicoAlert(object):
                 (self.received_live_count,
                  len(nicolive.NicoLive.instances),
                  threading.active_count(),
-                 nicolive.NicoLive.sum_total_comment_count))
+                 nicolive.NicoLive.comment_count))
 
             time.sleep(LOG_STATISTICS_INTERVAL)
 

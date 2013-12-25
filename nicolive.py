@@ -25,7 +25,7 @@ ACTIVE_TWEET_INITIAL_THREASHOLD = 100
 ACTIVE_TWEET_INCREMENT_VALUE = 100
 
 # tweet frequency
-TWEET_COUNT_THREASHOLD_UPPER = 40
+TWEET_COUNT_THREASHOLD_UPPER = 30
 TWEET_COUNT_THREASHOLD_LOWER = 10
 
 TWEET_FREQUENCY_MODE_NORMAL = 1
@@ -103,15 +103,14 @@ class NicoLive(object):
     global_managing_thread = None
 
     cookie_container = None
-    sum_total_comment_count = 0
+    comment_count = 0
     all_opened_thread_ids = []
-
-    tweet_frequency_mode = TWEET_FREQUENCY_MODE_NORMAL
 
     last_tweeted_credential_key = None
     last_tweeted_status = None
     tweets = []
     tweets_rate = 0
+    tweet_frequency_mode = TWEET_FREQUENCY_MODE_NORMAL
 
 # magic methods
     def __init__(self, mail, password, community_id, live_id):
@@ -816,7 +815,7 @@ class NicoLive(object):
                     # self.thread_local_vars.last_comment = comment
 
                     self.thread_local_vars.comment_count += 1
-                    NicoLive.sum_total_comment_count += 1
+                    NicoLive.comment_count += 1
                     self.comments.append((dt.now(), premium, user_id, comment))
                     self.should_recalculate_active = True
 
