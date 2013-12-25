@@ -1,17 +1,28 @@
 nicocomment
 ==
-monitor specified user's niconama comments, and tweet them.
+an implementation to monitor all niconama broadcast lives.
+* tweet popular lives using the following indexes.
+    1. active users in the live
+    2. participants in the live
+* tweet specified user's comments.
 
 sample
 -------------
+poplular lives.
+
+(screenshot here.)
+
+user comment.
+
 ![sample](./sample/screenshot.png)
-- http://www.nicovideo.jp/watch/sm22365097
-- http://www.nicovideo.jp/watch/sm22431441
+
+* http://www.nicovideo.jp/watch/sm22365097
+* http://www.nicovideo.jp/watch/sm22431441
 
 requirements
 --
-- python 2.7.x
-    - versions except 2.7.x are not tested
+* python 2.7.x
+    * versions except 2.7.x are not tested
 
 setup
 --

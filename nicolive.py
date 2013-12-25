@@ -96,6 +96,7 @@ DEBUG_LOG_COMMENT_TO_APP_LOG = False
 
 class NicoLive(object):
 # class variables
+    instances_lock = threading.Lock()
     cookie_container_lock = threading.Lock()
     twitter_status_update_lock = threading.Lock()
 
@@ -245,10 +246,10 @@ class NicoLive(object):
 
 # public methods, main
     def start_listening_live(self):
-        # instance should be added to 'instances' here, instead of __new__ or __init__.
+        # we have to use lock here to serialize access to 'instances' var.
         # with that, we can iterate instances safely in calculate_active_ranking method.
-        # because the operations here are serialized by GIL.
-        self.instances.add(self)
+        with NicoLive.instances_lock:
+            self.instances.add(self)
 
         if not NicoLive.global_managing_thread:
             NicoLive.start_global_managing_thread()
@@ -285,8 +286,8 @@ class NicoLive(object):
                 self.log_file_obj.close()
                 self.gzip_live_log_file()
 
-        # instance should be removed from 'instances' here, instead of __del__.
-        self.instances.remove(self)
+        with NicoLive.instances_lock:
+            self.instances.remove(self)
 
     def add_live_thread(self):
         # room_position 0: arena, 1: stand_a, 2: ...
@@ -912,22 +913,16 @@ class NicoLive(object):
     def calculate_active_ranking(cls):
         ranking = []
 
-        try:
-            # TODO: delete
-            # making copy to avoid RuntimeError: Set changed size during iteration
-            # with cls.instance_management_lock:
-            # lives = cls.instances.copy()
+        # to avoid RuntimeError 'Set changed size during iteration',
+        # we should make a copy of 'instances' with explicit lock.
+        with NicoLive.instances_lock:
+            lives = cls.instances.copy()
 
-            # for live in lives:
-            for live in cls.instances:
-                ranking.append((live.active, live.community_id, live.live_id,
-                                live.community_name, live.live_name, live.live_start_time))
+        for live in lives:
+            ranking.append((live.active, live.community_id, live.live_id,
+                            live.community_name, live.live_name, live.live_start_time))
 
-            ranking = sorted(ranking, key=lambda x: x[0], reverse=True)
-        except Exception, e:
-            logging.error("failed to create active ranking, error: %s" % e)
-
-        return ranking
+        return sorted(ranking, key=lambda x: x[0], reverse=True)
 
 # private methods, local managing thread
     def start_local_managing_thread(self):
