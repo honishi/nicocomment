@@ -32,25 +32,18 @@ TWEET_RATE_WATCHING_MINUTES = 60
 DEFAULT_CREDENTIAL_KEY = "all"
 
 # retry values
-RETRY_INTERVAL_GET_COOKIE_CONTAINER = 1
 RETRY_INTERVAL_GET_STREAM_INFO = 3
-RETRY_INTERVAL_GET_PLAYER_STATUS = 3
-RETRY_INTERVAL_OPEN_COMMENT_SERVER_SOCKET = 1
+RETRY_INTERVAL_LISTEN_LIVE = 3
 
-MAX_RETRY_COUNT_GET_COOKIE_CONTAINER = 5
 MAX_RETRY_COUNT_GET_STREAM_INFO = 5
-MAX_RETRY_COUNT_GET_PLAYER_STATUS = 5
+MAX_RETRY_COUNT_LISTEN_LIVE = 5
 # block_now_count_overflow case, retrying for 30 min
-MAX_RETRY_COUNT_GET_PLAYER_STATUS_BNCO = 30 * 60 / RETRY_INTERVAL_GET_PLAYER_STATUS
-MAX_RETRY_COUNT_OPEN_COMMENT_SERVER_SOCKET = 5
+MAX_RETRY_COUNT_LISTEN_LIVE_BNCO = 30 * 60 / RETRY_INTERVAL_LISTEN_LIVE
 
 # subthread intervals,
 # global is for all lives and class-wide one, local is for a live and instance-wide one
 GLOBAL_MANAGING_THREAD_INTERVAL = 10
 LOCAL_MANAGING_THREAD_INTERVAL = 10
-
-# misc
-SOCKET_TIMEOUT = 60 * 30
 
 # constants, file path
 NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.config'
@@ -251,19 +244,19 @@ class NicoLive(object):
                     logging.debug("live is '%s', so skip.", e.code)
                     break
                 else:
-                    max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS
+                    max_retry_count = MAX_RETRY_COUNT_LISTEN_LIVE
                     if (e.status == 'fail' and e.code in [
                             'comingsoon', 'block_now_count_overflow']):
                         logging.debug("live is '%s', so retry, error: %s" % (e.code, e))
                         if e.code == "block_now_count_overflow":
-                            max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS_BNCO
+                            max_retry_count = MAX_RETRY_COUNT_LISTEN_LIVE_BNCO
                     else:
                         # possible case of session expiration, so clearing container and retry
                         logging.warning("unexpected error when opening live, error: %s" % e)
                         self.api.reset_cookie_container()
             except Exception, e:
                 logging.warning("possible network error when opening live, error: %s" % e)
-                max_retry_count = MAX_RETRY_COUNT_GET_PLAYER_STATUS
+                max_retry_count = MAX_RETRY_COUNT_LISTEN_LIVE
 
             if retry_count < max_retry_count:
                 logging.debug("retrying to open live, retry count: %d" % retry_count)
@@ -271,7 +264,7 @@ class NicoLive(object):
                 logging.error("gave up retrying to open live, retry count: %d" % retry_count)
                 break
 
-            time.sleep(RETRY_INTERVAL_GET_PLAYER_STATUS)
+            time.sleep(RETRY_INTERVAL_LISTEN_LIVE)
             retry_count += 1
 
         self.live_status = LIVE_STATUS_TYPE_FINISHED

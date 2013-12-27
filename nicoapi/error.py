@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+
 class NicoAPIError(Exception):
     def __init__(self, status='', code='', info=''):
         self.status = status

@@ -49,7 +49,7 @@ class TestNicoAPI(object):
         alert_thread.start()
 
         self.prepare_to_wait_async_callback()
-        callback_call_count = self.wait_async_callback(10, 1)
+        callback_call_count = self.wait_async_callback(20, 1)
         api.close_alert_server()
 
         assert 0 < callback_call_count
