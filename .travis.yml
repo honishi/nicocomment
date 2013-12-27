@@ -1,0 +1,10 @@
+language: python
+python:
+- '2.7'
+install:
+- pip install http://sourceforge.net/projects/pychecker/files/pychecker/0.8.19/pychecker-0.8.19.tar.gz/download
+script: ./run_tests.sh
+env:
+  global:
+  - secure: RX31sonZv0ZDpJC92rWGATAFOJK37YRgtjworzP+9UsQfWZ7a9IOUb1Rl4nV98w0TZsyBv4aw2P9fAab46ThUKrvFD5sumPv9014UjDkTUdr7tAE3KP0bzzN84Cx5S9TqyLKZ3r7OCJ0lat3rA4o+UmYtJCfzcE1Cm1/I8w5zC0=
+  - secure: fg9Nv7xNhLIoq0rhgPjziVNbJlznjOOoYbz8vV0BTdTsW6/rZKyBl2CKkEWGY4PHnG3IadiTL5t3eCy+YE8wXHNfqEXsCP5AhAIZUbaK3r2re09JrgAApDRvpghGXKcjbdoli8IC6ThfNuE2QsnjEhlGis07FX+dFBOdxvCRy8s=

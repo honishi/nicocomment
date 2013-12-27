@@ -1,5 +1,7 @@
 nicocomment
 ==
+[![Build Status](https://travis-ci.org/honishi/nicocomment.png?branch=develop)](https://travis-ci.org/honishi/nicocomment)
+
 an implementation to monitor all niconama broadcast lives.
 * tweet popular lives using the following indexes.
     1. active users
