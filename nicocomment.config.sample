@@ -1,12 +1,8 @@
 [nicocomment]
-# no configurable parameters in this section
-
-[nicoalert]
 mail = mail@example.com
 password = p@ssword
 
 [nicolive]
-# force_debug_tweet = true
 live_logging = true
 
 [community-all]
@@ -72,7 +68,7 @@ args=(os.getcwd() + "/log/nicocomment.log", 'a', (100*1024*1024), 9)
 class=handlers.RotatingFileHandler
 level=NOTSET
 formatter=default
-args=(os.getcwd() + "/log/nicoalert.log", 'a', (100*1024*1024), 9)
+args=(os.getcwd() + "/log/alert.log", 'a', (100*1024*1024), 9)
 
 [formatters]
 keys=default

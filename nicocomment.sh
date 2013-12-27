@@ -12,7 +12,7 @@ monitor_threshold=$((30))
 
 nohupfile=${basedir}/log/nohup.out
 logfile=${basedir}/log/nicocomment.log
-alertlogfile=${basedir}/log/nicoalert.log
+alertlogfile=${basedir}/log/alert.log
 
 
 start() {
