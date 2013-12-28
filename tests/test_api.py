@@ -34,7 +34,7 @@ class TestNicoAPI(object):
         logging.info('communities: %s' % communities)
         logging.info('host: %s port: %s thread: %s' % (host, port, thread))
 
-        assert 0 < len(communities)
+        assert 0 <= len(communities)
         assert re.match(r'.+\.live\.nicovideo\.jp', host)
         assert 0 < port and 0 < thread
 
