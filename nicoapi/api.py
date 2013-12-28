@@ -167,6 +167,10 @@ class NicoAPI(object):
             for live_thread in self.opened_live_threads:
                 live_thread.join()
 
+        # set None to release strong reference to nicolive object
+        self.chat_handler = None
+        self.raw_handler = None
+
 # private methods, core utility
     @classmethod
     def reset_cookie_container(cls):

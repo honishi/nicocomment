@@ -12,8 +12,6 @@ import pytest
 
 import nicoapi
 
-TEST_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/test.config'
-
 
 class TestNicoAPI(object):
 # pytest methods, object injection
