@@ -310,13 +310,7 @@ class NicoLive(object):
 
     # examines stream contents
     def check_opening_room(self, room_position, premium):
-        if self.open_room_tweeted[room_position]:
-            return
-
-        if self.user_id in self.mute_user_ids or self.community_id in self.mute_community_ids:
-            logging.info("skipped open room tweets, user_id: %s community_id: %s" %
-                         (self.user_id, self.community_id))
-            self.open_room_tweeted[room_position] = True
+        if room_position == 0 or self.open_room_tweeted[room_position]:
             return
 
         # assume the comment from 0(ippan), 1(premium), 7(bsp) as a sign of opening room
@@ -324,26 +318,31 @@ class NicoLive(object):
             return
 
         if 0 < room_position:
-            room_name = u"立ち見"
-            if room_position == 1:
-                room_name += u"A"
-            elif room_position == 2:
-                room_name += u"B"
-            elif room_position == 3:
-                room_name += u"C"
-            else:
-                room_name += u"X"
-            status = self.create_stand_room_status(room_name)
-
-            if (DEFAULT_CREDENTIAL_KEY in self.target_communities and
-                    1 < room_position and
-                    NicoLive.tweet_frequency_mode == TWEET_FREQUENCY_MODE_NORMAL):
-                self.update_twitter_status(DEFAULT_CREDENTIAL_KEY, status)
-
-            if self.community_id in self.target_communities:
-                self.update_twitter_status(self.community_id, status)
-
             self.open_room_tweeted[room_position] = True
+
+            if self.user_id in self.mute_user_ids or self.community_id in self.mute_community_ids:
+                logging.info("skipped open room tweets, user_id: %s community_id: %s" %
+                             (self.user_id, self.community_id))
+                self.open_room_tweeted[room_position] = True
+            else:
+                room_name = u"立ち見"
+                if room_position == 1:
+                    room_name += u"A"
+                elif room_position == 2:
+                    room_name += u"B"
+                elif room_position == 3:
+                    room_name += u"C"
+                else:
+                    room_name += u"X"
+                status = self.create_stand_room_status(room_name)
+
+                if (DEFAULT_CREDENTIAL_KEY in self.target_communities and
+                        1 < room_position and
+                        NicoLive.tweet_frequency_mode == TWEET_FREQUENCY_MODE_NORMAL):
+                    self.update_twitter_status(DEFAULT_CREDENTIAL_KEY, status)
+
+                if self.community_id in self.target_communities:
+                    self.update_twitter_status(self.community_id, status)
 
     def check_user_id(self, user_id, comment):
         if DEBUG_FORCE_USER_TWEET_AND_EXIT:
