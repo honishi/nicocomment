@@ -56,7 +56,7 @@ class NicoComment(object):
         self.received_alert_count += 1
 
         try:
-            live = nicolive.NicoLive(self.mail, self.password, community_id, live_id)
+            live = nicolive.NicoLive(self.mail, self.password, community_id, live_id, user_id)
             live_thread = threading.Thread(
                 name="%s,%s" % (community_id, live_id), target=live.start_listening_live)
             live_thread.start()

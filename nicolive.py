@@ -80,11 +80,12 @@ class NicoLive(object):
     tweet_frequency_mode = TWEET_FREQUENCY_MODE_NORMAL
 
 # magic methods
-    def __init__(self, mail, password, community_id, live_id):
+    def __init__(self, mail, password, community_id, live_id, user_id):
         self.mail = mail
         self.password = password
         self.community_id = community_id
         self.live_id = live_id
+        self.user_id = user_id
 
         self.api = nicoapi.NicoAPI(self.mail, self.password)
 
@@ -106,8 +107,10 @@ class NicoLive(object):
         config = ConfigParser.ConfigParser()
         config.read(NICOCOMMENT_CONFIG)
 
-        self.live_logging = self.get_basic_config(config)
-        # logging.debug("live_logging: %s" % self.live_logging)
+        self.live_logging, self.mute_user_ids, self.mute_community_ids = (
+            self.get_basic_config(config))
+        # logging.debug("live_logging: %s mute_user_ids: %s mute_community_ids: %s" %
+        #               (self.live_logging, self.mute_user_ids, self.mute_community_ids))
 
         self.consumer_key = {}
         self.consumer_secret = {}
@@ -159,8 +162,17 @@ class NicoLive(object):
     # utility
     def get_basic_config(self, config):
         section = "nicolive"
+
         live_logging = self.get_bool_for_option(config, section, "live_logging")
-        return live_logging
+
+        mute_user_ids = []
+        if config.has_option(section, "mute_user_ids"):
+            mute_user_ids = config.get(section, "mute_user_ids").split(',')
+        mute_community_ids = []
+        if config.has_option(section, "mute_community_ids"):
+            mute_community_ids = config.get(section, "mute_community_ids").split(',')
+
+        return live_logging, mute_user_ids, mute_community_ids
 
     def get_user_config(self, config):
         result = []
@@ -299,6 +311,12 @@ class NicoLive(object):
     # examines stream contents
     def check_opening_room(self, room_position, premium):
         if self.open_room_tweeted[room_position]:
+            return
+
+        if self.user_id in self.mute_user_ids or self.community_id in self.mute_community_ids:
+            logging.info("skipped open room tweets, user_id: %s community_id: %s" %
+                         (self.user_id, self.community_id))
+            self.open_room_tweeted[room_position] = True
             return
 
         # assume the comment from 0(ippan), 1(premium), 7(bsp) as a sign of opening room
@@ -515,10 +533,14 @@ class NicoLive(object):
             status = self.create_active_live_status(self.active_tweet_target)
             self.active_tweet_target += ACTIVE_TWEET_INCREMENT_VALUE
 
-            if DEFAULT_CREDENTIAL_KEY in self.target_communities:
-                self.update_twitter_status(DEFAULT_CREDENTIAL_KEY, status)
-            if self.community_id in self.target_communities:
-                self.update_twitter_status(self.community_id, status)
+            if self.user_id in self.mute_user_ids or self.community_id in self.mute_community_ids:
+                logging.info("skipped active tweets, user_id: %s community_id: %s" %
+                             (self.user_id, self.community_id))
+            else:
+                if DEFAULT_CREDENTIAL_KEY in self.target_communities:
+                    self.update_twitter_status(DEFAULT_CREDENTIAL_KEY, status)
+                if self.community_id in self.target_communities:
+                    self.update_twitter_status(self.community_id, status)
 
 # private methods, twitter
     # user-related
@@ -636,5 +658,5 @@ class NicoLive(object):
 if __name__ == "__main__":
     logging.config.fileConfig(NICOCOMMENT_CONFIG)
 
-    nicolive = NicoLive(os.sys.argv[1], os.sys.argv[2], None, os.sys.argv[3])
+    nicolive = NicoLive(os.sys.argv[1], os.sys.argv[2], None, os.sys.argv[3], None)
     nicolive.start_listening_live()
