@@ -3,7 +3,7 @@
 set -e
 
 log='./nicocomment.log'
-alertlog='./nicoalert.log'
+alertlog='./alert.log'
 
 netstat_target_host='202.248.110.'
 netstat_sleep_time=10
@@ -20,20 +20,17 @@ case "$1" in
   retry)
     tail -F ${log} | grep -i "retry"
     ;;
+  stat)
+    tail -F ${log} | grep -i 'instances'
+    ;;
   alert)
     tail -F ${alertlog}
-    ;;
-  channel)
-    tail -F ${log} | grep 'ch\d+'
-    ;;
-  tweet)
-    tail -F ${log} | grep -i 'tweet'
     ;;
   rank)
     tail -F ${log} | grep -i 'rank'
     ;;
-  thread)
-    tail -F ${log} | grep 'alert_statistics'
+  channel)
+    tail -F ${log} | grep 'ch\d+'
     ;;
   netstat)
     while :
@@ -44,5 +41,5 @@ case "$1" in
     done
     ;;
   *)
-    echo $"usage: $prog {all|error|retry|alert|channel|tweet|rank|thread|netstat}" && exit 1
+    echo $"usage: $prog {all|error|retry|stat|alert|rank|channel|netstat}" && exit 1
 esac
