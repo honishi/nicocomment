@@ -1,6 +1,7 @@
 nicocomment
 ==
 [![Build Status](https://travis-ci.org/honishi/nicocomment.png?branch=develop)](https://travis-ci.org/honishi/nicocomment)
+[![Coverage Status](https://coveralls.io/repos/honishi/nicocomment/badge.png?branch=develop)](https://coveralls.io/r/honishi/nicocomment?branch=develop)
 
 an implementation to monitor all niconama broadcast lives.
 * tweet popular lives using the following indexes.
@@ -75,12 +76,9 @@ $ ulimit -a
 
 start & stop
 --
-start.
+just use start & stop.
 ````
 $ ./nicocomment.sh start
-````
-stop.
-````
 $ ./nicocomment.sh stop
 ````
 

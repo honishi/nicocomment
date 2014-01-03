@@ -1,6 +1,8 @@
 venv/
 *.pyc
 .cache
+.coverage
+
 log/*.log*
 log/nohup.out
 log/live.*

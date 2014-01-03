@@ -5,6 +5,8 @@ install:
 - pip install http://sourceforge.net/projects/pychecker/files/pychecker/0.8.19/pychecker-0.8.19.tar.gz/download
 - pip install -r requirements.txt --use-mirrors
 script: ./run_tests.sh
+after_success:
+- coveralls
 env:
   global:
   - secure: g+2N2z0IGoDOxmjtqZS5C3ecPYedb+YGUnsYD12WAi6OtIttFB+kF5iqDUs0STGf3M61FIkxejTONFnszyBW+5Ti+Zk0PK7YE/lqlZwkzlvGoBwaLsi6NeWjlrWhbtAEsM2vGozzOkksKyECxRV1incJxrGtBKr6+Ss3FsmMMow=

@@ -12,4 +12,4 @@ do
   fi
 done
 
-py.test tests
+py.test --pep8 --cov nicocomment.py --cov nicolive.py --cov nicoapi tests
