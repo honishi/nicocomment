@@ -37,8 +37,8 @@ RETRY_INTERVAL_LISTEN_LIVE = 3
 
 MAX_RETRY_COUNT_GET_STREAM_INFO = 5
 MAX_RETRY_COUNT_LISTEN_LIVE = 5
-# block_now_count_overflow case, retrying for 30 min
-MAX_RETRY_COUNT_LISTEN_LIVE_BNCO = 30 * 60 / RETRY_INTERVAL_LISTEN_LIVE
+# retrying for 30 min for the case like comingsoon, full, block_now_count_overflow
+MAX_RETRY_COUNT_LISTEN_LIVE_LONG = 30 * 60 / RETRY_INTERVAL_LISTEN_LIVE
 
 # subthread intervals,
 # global is for all lives and class-wide one, local is for a live and instance-wide one
@@ -241,7 +241,7 @@ class NicoLive(object):
             self.open_room_tweeted[room_position] = False
 
         retry_count = 0
-        max_retry_count = 0
+        max_retry_count = MAX_RETRY_COUNT_LISTEN_LIVE
 
         while True:
             try:
@@ -256,24 +256,23 @@ class NicoLive(object):
                     logging.debug("live is '%s', so skip.", e.code)
                     break
                 else:
-                    max_retry_count = MAX_RETRY_COUNT_LISTEN_LIVE
                     if (e.status == 'fail' and e.code in [
-                            'comingsoon', 'block_now_count_overflow']):
+                            'comingsoon', 'full', 'block_now_count_overflow']):
                         logging.debug("live is '%s', so retry, error: %s" % (e.code, e))
-                        if e.code == "block_now_count_overflow":
-                            max_retry_count = MAX_RETRY_COUNT_LISTEN_LIVE_BNCO
+                        max_retry_count = MAX_RETRY_COUNT_LISTEN_LIVE_LONG
                     else:
                         # possible case of session expiration, so clearing container and retry
                         logging.warning("unexpected error when opening live, error: %s" % e)
                         self.api.reset_cookie_container()
             except Exception, e:
                 logging.warning("possible network error when opening live, error: %s" % e)
-                max_retry_count = MAX_RETRY_COUNT_LISTEN_LIVE
 
             if retry_count < max_retry_count:
-                logging.debug("retrying to open live, retry count: %d" % retry_count)
+                logging.debug("retrying to open live, retry count: %d/%d" %
+                              (retry_count, max_retry_count))
             else:
-                logging.error("gave up retrying to open live, retry count: %d" % retry_count)
+                logging.error("gave up retrying to open live, retry count: %d/%d" %
+                              (retry_count, max_retry_count))
                 break
 
             time.sleep(RETRY_INTERVAL_LISTEN_LIVE)
