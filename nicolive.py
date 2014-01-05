@@ -47,6 +47,7 @@ LOCAL_MANAGING_THREAD_INTERVAL = 10
 
 # constants, file path
 NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.config'
+NICOCOMMENT_CONFIG_SAMPLE = NICOCOMMENT_CONFIG + '.sample'
 LIVE_LOG_BASE_DIR = os.path.dirname(os.path.abspath(__file__)) + '/log/live'
 
 # constants, service url
@@ -104,8 +105,12 @@ class NicoLive(object):
         self.active_tweet_target = ACTIVE_TWEET_INITIAL_THREASHOLD
         self.open_room_tweeted = {}
 
+        config_file = NICOCOMMENT_CONFIG
+        if not os.path.exists(config_file):
+            config_file = NICOCOMMENT_CONFIG_SAMPLE
+
         config = ConfigParser.ConfigParser()
-        config.read(NICOCOMMENT_CONFIG)
+        config.read(config_file)
 
         self.live_logging, self.mute_user_ids, self.mute_community_ids = (
             self.get_basic_config(config))

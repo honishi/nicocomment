@@ -12,6 +12,7 @@ import nicoapi
 import nicolive
 
 NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.config'
+NICOCOMMENT_CONFIG_SAMPLE = NICOCOMMENT_CONFIG + '.sample'
 
 LOG_STATISTICS_INTERVAL = 10
 
@@ -19,11 +20,15 @@ LOG_STATISTICS_INTERVAL = 10
 class NicoComment(object):
 # magic methods
     def __init__(self):
-        logging.config.fileConfig(NICOCOMMENT_CONFIG)
+        config_file = NICOCOMMENT_CONFIG
+        if not os.path.exists(config_file):
+            config_file = NICOCOMMENT_CONFIG_SAMPLE
+
+        logging.config.fileConfig(config_file)
 
         self.received_alert_count = 0
 
-        self.mail, self.password = self.get_basic_config()
+        self.mail, self.password = self.get_basic_config(config_file)
         logging.debug("mail: %s password: xxxxxxxxxx" % self.mail)
 
         self.api = nicoapi.NicoAPI(self.mail, self.password)
@@ -34,9 +39,9 @@ class NicoComment(object):
         pass
 
     # utility
-    def get_basic_config(self):
+    def get_basic_config(self, config_file):
         config = ConfigParser.ConfigParser()
-        config.read(NICOCOMMENT_CONFIG)
+        config.read(config_file)
 
         section = "nicocomment"
         mail = config.get(section, "mail")
