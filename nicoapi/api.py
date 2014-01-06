@@ -196,13 +196,14 @@ class NicoAPI(object):
                             "error: %s" % e)
                         if retry_count < MAX_RETRY_COUNT_GET_COOKIE_CONTAINER:
                             logging.debug(
-                                "retrying cookie container initialization, retry count: %d" %
-                                retry_count)
+                                "retrying cookie container initialization, retry count: %d/%d" %
+                                (retry_count, MAX_RETRY_COUNT_GET_COOKIE_CONTAINER))
                             time.sleep(RETRY_INTERVAL_GET_COOKIE_CONTAINER)
                         else:
                             logging.error(
                                 "gave up retrying cookie container initialization, "
-                                "retry count: %d" % retry_count)
+                                "retry count: %d/%d" %
+                                (retry_count, MAX_RETRY_COUNT_GET_COOKIE_CONTAINER))
                             break   # = return None
                     else:
                         logging.debug("opened cookie container")
@@ -647,12 +648,13 @@ class NicoAPI(object):
                     "possible network error when connecting to comment server, error: %s" % e)
                 if retry_count < MAX_RETRY_COUNT_OPEN_COMMENT_SERVER_SOCKET:
                     logging.debug(
-                        "retrying to connect to comment server, retry count: %d" % retry_count)
+                        "retrying to connect to comment server, retry count: %d/%d" %
+                        (retry_count, MAX_RETRY_COUNT_OPEN_COMMENT_SERVER_SOCKET))
                     time.sleep(RETRY_INTERVAL_OPEN_COMMENT_SERVER_SOCKET)
                 else:
                     logging.error(
-                        "gave up retrying to connect to comment server, "
-                        "retry count: %d" % retry_count)
+                        "gave up retrying to connect to comment server, retry count: %d/%d" %
+                        (retry_count, MAX_RETRY_COUNT_OPEN_COMMENT_SERVER_SOCKET))
                     return None
             retry_count += 1
 

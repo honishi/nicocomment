@@ -374,11 +374,12 @@ class NicoLive(object):
                 break
             except Exception, e:
                 if retry_count < MAX_RETRY_COUNT_GET_STREAM_INFO:
-                    logging.debug("retrying to open getstreaminfo, "
-                                  "retry count: %d" % retry_count)
+                    logging.debug("retrying to open getstreaminfo, retry count: %d/%d" %
+                                  (retry_count, MAX_RETRY_COUNT_GET_STREAM_INFO))
                 else:
                     logging.error("gave up retrying to open getstreaminfo, so quit, "
-                                  "retry count: %d" % retry_count)
+                                  "retry count: %d/%d" %
+                                  (retry_count, MAX_RETRY_COUNT_GET_STREAM_INFO))
                     logging.error("could not get stream info: %s" % e)
                     community_name = "n/a"
                     live_name = "n/a"
