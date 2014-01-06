@@ -7,6 +7,7 @@ import logging
 import logging.config
 import time
 import threading
+from datetime import datetime as dt
 
 import nicoapi
 import nicolive
@@ -15,6 +16,9 @@ NICOCOMMENT_CONFIG = os.path.dirname(os.path.abspath(__file__)) + '/nicocomment.
 NICOCOMMENT_CONFIG_SAMPLE = NICOCOMMENT_CONFIG + '.sample'
 
 LOG_STATISTICS_INTERVAL = 10
+
+DEBUG_ENABLE_PROFILE = False
+PROFILE_DURATION = 60 * 10
 
 
 class NicoComment(object):
@@ -51,7 +55,15 @@ class NicoComment(object):
 
 # public methods, main
     def start_monitoring(self):
-        self.api.listen_alert(self.handle_alert)
+        alert_thread = threading.Thread(
+            name="listen_alert", target=self.api.listen_alert, args=(self.handle_alert,))
+        if DEBUG_ENABLE_PROFILE:
+            alert_thread.daemon = True
+
+        alert_thread.start()
+
+        if DEBUG_ENABLE_PROFILE:
+            time.sleep(PROFILE_DURATION)
 
 # private methods, alert
     def handle_alert(self, live_id, community_id, user_id):
@@ -81,5 +93,16 @@ class NicoComment(object):
             time.sleep(LOG_STATISTICS_INTERVAL)
 
 if __name__ == "__main__":
+
+    if DEBUG_ENABLE_PROFILE:
+        import yappi
+        yappi.start()
+
     nicocomment = NicoComment()
     nicocomment.start_monitoring()
+
+    if DEBUG_ENABLE_PROFILE:
+        path = (os.path.dirname(os.path.abspath(__file__)) + '/profile.' +
+                dt.now().strftime('%Y%m%d-%H%M%S'))
+        yappi.get_func_stats().save(path)
+        logging.info("finished to profile.")

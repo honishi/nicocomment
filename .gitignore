@@ -11,3 +11,5 @@ log/live.*
 !*.config.sample
 *.env*
 !*.env.sample
+
+profile.*
