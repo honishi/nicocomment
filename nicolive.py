@@ -72,6 +72,8 @@ class NicoLive(object):
     instances = set()
     global_managing_thread = None
 
+    config = None
+
     comment_count = 0
 
     last_tweeted_credential_key = None
@@ -105,12 +107,16 @@ class NicoLive(object):
         self.active_tweet_target = ACTIVE_TWEET_INITIAL_THREASHOLD
         self.open_room_tweeted = {}
 
-        config_file = NICOCOMMENT_CONFIG
-        if not os.path.exists(config_file):
-            config_file = NICOCOMMENT_CONFIG_SAMPLE
+        if NicoLive.config:
+            config = NicoLive.config
+        else:
+            config_file = NICOCOMMENT_CONFIG
+            if not os.path.exists(config_file):
+                config_file = NICOCOMMENT_CONFIG_SAMPLE
 
-        config = ConfigParser.ConfigParser()
-        config.read(config_file)
+            config = ConfigParser.ConfigParser()
+            config.read(config_file)
+            NicoLive.config = config
 
         self.live_logging, self.mute_user_ids, self.mute_community_ids = (
             self.get_basic_config(config))
