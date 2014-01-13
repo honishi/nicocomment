@@ -133,15 +133,19 @@ class NicoAPI(object):
 
             community_name = stream_info_element.xpath("//communityinfo/name")[0].text
             live_name = stream_info_element.xpath("//streaminfo/title")[0].text
+            description = stream_info_element.xpath("//streaminfo/description")[0].text
             # set "n/a", when no value provided; like <title/>
             if community_name is None:
                 community_name = "n/a"
             if live_name is None:
                 live_name = "n/a"
+            if description is None:
+                description = "n/a"
         else:
             raise NicoAPIError(info=response)
 
-        return self.convert_to_unicode(community_name), self.convert_to_unicode(live_name)
+        return (self.convert_to_unicode(community_name), self.convert_to_unicode(live_name),
+                self.convert_to_unicode(description))
 
     def listen_live(self, community_id, live_id, chat_handler=None, raw_handler=None):
         self.community_id = community_id    # used only for logging, so can be specified as ''

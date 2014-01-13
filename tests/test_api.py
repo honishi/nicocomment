@@ -53,8 +53,9 @@ class TestNicoAPI(object):
         assert 0 < callback_call_count
 
         # stream info
-        community_name, live_name = api.get_stream_info(self.last_received_live_id)
-        logging.info('community_name: %s live_name: %s' % (community_name, live_name))
+        community_name, live_name, description = api.get_stream_info(self.last_received_live_id)
+        logging.info('community_name: %s live_name: %s description: %s' %
+                     (community_name, live_name, description))
 
         assert len(community_name) and len(live_name)
 

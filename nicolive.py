@@ -118,10 +118,14 @@ class NicoLive(object):
             config.read(config_file)
             NicoLive.config = config
 
-        self.live_logging, self.mute_user_ids, self.mute_community_ids = (
-            self.get_basic_config(config))
-        # logging.debug("live_logging: %s mute_user_ids: %s mute_community_ids: %s" %
-        #               (self.live_logging, self.mute_user_ids, self.mute_community_ids))
+        (self.live_logging, self.mute_user_ids, self.mute_community_ids, self.mute_live_names,
+            self.mute_descriptions) = self.get_basic_config(config)
+        """
+        logging.debug("live_logging: %s mute_user_ids: %s mute_community_ids: %s "
+                      "mute_live_names: %s mute_descriptions: %s" %
+                      (self.live_logging, self.mute_user_ids, self.mute_community_ids,
+                       self.mute_live_names, self.mute_descriptions))
+        """
 
         self.consumer_key = {}
         self.consumer_secret = {}
@@ -176,14 +180,20 @@ class NicoLive(object):
 
         live_logging = self.get_bool_for_option(config, section, "live_logging")
 
-        mute_user_ids = []
-        if config.has_option(section, "mute_user_ids"):
-            mute_user_ids = config.get(section, "mute_user_ids").split(',')
-        mute_community_ids = []
-        if config.has_option(section, "mute_community_ids"):
-            mute_community_ids = config.get(section, "mute_community_ids").split(',')
+        mute_user_ids = self.get_mutes(config, section, "mute_user_ids")
+        mute_community_ids = self.get_mutes(config, section, "mute_community_ids")
+        mute_live_names = self.get_mutes(config, section, "mute_titles")
+        mute_descriptions = self.get_mutes(config, section, "mute_descriptions")
 
-        return live_logging, mute_user_ids, mute_community_ids
+        return live_logging, mute_user_ids, mute_community_ids, mute_live_names, mute_descriptions
+
+    def get_mutes(self, config, section, mute_option):
+        value = []
+
+        if config.has_option(section, mute_option):
+            value = unicode(config.get(section, mute_option), 'utf8').split(',')
+
+        return value
 
     def get_user_config(self, config):
         result = []
@@ -241,6 +251,8 @@ class NicoLive(object):
         # names of community and live are required in the following steps.
         if not DEBUG_SKIP_STREAM_INFO:
             self.get_live_basic_info(self.set_live_basic_info)
+            if self.should_mute_live():
+                logging.info("this live will be muted.")
 
         self.live_status = LIVE_STATUS_TYPE_STARTED
         self.start_local_managing_thread()
@@ -330,9 +342,8 @@ class NicoLive(object):
         if 0 < room_position:
             self.open_room_tweeted[room_position] = True
 
-            if self.user_id in self.mute_user_ids or self.community_id in self.mute_community_ids:
-                logging.info("skipped open room tweets, user_id: %s community_id: %s" %
-                             (self.user_id, self.community_id))
+            if self.should_mute_live():
+                logging.info("skipped 'open room' tweets.")
                 self.open_room_tweeted[room_position] = True
             else:
                 room_name = u"立ち見"
@@ -366,6 +377,28 @@ class NicoLive(object):
                     status = self.create_monitored_comment_status(user_id, comment)
                     self.update_twitter_status(user_id, status)
 
+# private methods, live utility
+    def should_mute_live(self):
+        if self.user_id in self.mute_user_ids:
+            logging.info("this live should be muted by user_id: %s" % self.user_id)
+            return True
+
+        if self.community_id in self.mute_community_ids:
+            logging.info("this live should be muted by community_id: %s" % self.community_id)
+            return True
+
+        for mute_live_name in self.mute_live_names:
+            if re.search(mute_live_name, self.live_name):
+                logging.info("this live should be muted by live_name: %s" % self.live_name)
+                return True
+
+        for mute_description in self.mute_descriptions:
+            if re.search(mute_description, self.description):
+                logging.info("this live should be muted by description: %s" % self.description)
+                return True
+
+        return False
+
 # private methods, live information
     def get_live_basic_info(self, callback):
         live_start_time = dt.now()
@@ -373,10 +406,11 @@ class NicoLive(object):
         retry_count = 0
         while True:
             try:
-                community_name, live_name = self.api.get_stream_info(self.live_id)
+                community_name, live_name, description = self.api.get_stream_info(self.live_id)
                 if False:
-                    logging.debug("*** stream info, community name: %s live name: %s" %
-                                  (community_name, live_name))
+                    logging.debug(
+                        "*** stream info, community name: %s live name: %s description: %s" %
+                        (community_name, live_name, description))
                 break
             except Exception, e:
                 if retry_count < MAX_RETRY_COUNT_GET_STREAM_INFO:
@@ -389,16 +423,18 @@ class NicoLive(object):
                     logging.error("could not get stream info: %s" % e)
                     community_name = "n/a"
                     live_name = "n/a"
+                    description = "n/a"
                     break
                 time.sleep(RETRY_INTERVAL_GET_STREAM_INFO)
                 retry_count += 1
 
-        callback(live_start_time, community_name, live_name)
+        callback(live_start_time, community_name, live_name, description)
 
-    def set_live_basic_info(self, live_start_time, community_name, live_name):
+    def set_live_basic_info(self, live_start_time, community_name, live_name, description):
         self.live_start_time = live_start_time
         self.community_name = community_name
         self.live_name = live_name
+        self.description = description
 
         for community_id in self.target_communities:
             if self.community_id == community_id:
@@ -543,9 +579,8 @@ class NicoLive(object):
             status = self.create_active_live_status(self.active_tweet_target)
             self.active_tweet_target += ACTIVE_TWEET_INCREMENT_VALUE
 
-            if self.user_id in self.mute_user_ids or self.community_id in self.mute_community_ids:
-                logging.info("skipped active tweets, user_id: %s community_id: %s" %
-                             (self.user_id, self.community_id))
+            if self.should_mute_live():
+                logging.info("skipped 'active' tweets.")
             else:
                 if DEFAULT_CREDENTIAL_KEY in self.target_communities:
                     self.update_twitter_status(DEFAULT_CREDENTIAL_KEY, status)

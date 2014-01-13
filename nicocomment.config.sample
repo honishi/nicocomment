@@ -6,6 +6,8 @@ password = p@ssword
 live_logging = true
 mute_user_ids = 11111,22222
 mute_community_ids = co11111,co22222
+mute_titles = 弾幕,xxxxx,yyyyy
+mute_descriptions = 弾幕歓迎,xxxxx,yyyyy
 
 [community-all]
 # @twitter_account
