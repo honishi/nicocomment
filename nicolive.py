@@ -57,6 +57,9 @@ LIVE_STATUS_TYPE_UNKNOWN = 0
 LIVE_STATUS_TYPE_STARTED = 1
 LIVE_STATUS_TYPE_FINISHED = 2
 
+# misc settings
+ENABLE_CONFIG_CACHE = False
+
 # some debug definitions
 DEBUG_LOG_COMMENT_TO_APP_LOG = False
 DEBUG_LOG_COMMENT_TO_STDOUT = False
@@ -107,7 +110,7 @@ class NicoLive(object):
         self.active_tweet_target = ACTIVE_TWEET_INITIAL_THREASHOLD
         self.open_room_tweeted = {}
 
-        if NicoLive.config:
+        if ENABLE_CONFIG_CACHE and NicoLive.config:
             config = NicoLive.config
         else:
             config_file = NICOCOMMENT_CONFIG
