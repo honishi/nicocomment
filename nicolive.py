@@ -593,6 +593,8 @@ class NicoLive(object):
 # private methods, twitter
     # user-related
     def create_monitored_comment_status(self, user_id, comment):
+        comment = re.sub(ur'/press show \w+ ', '', comment)
+
         status = u"【%s】\n%s\n%s%s\n(%s)" % (
             unicode(self.header_text[user_id], 'utf8'), comment,
             LIVE_URL, self.live_id, self.community_name)
