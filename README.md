@@ -31,18 +31,18 @@ setup
 --
 first, setup runtime environment.
 ````
-$ git submodule update --init
-$ virtualenv --distribute venv
-$ source ./venv/bin/activate
-$ pip install http://sourceforge.net/projects/pychecker/files/pychecker/0.8.19/pychecker-0.8.19.tar.gz/download
-$ sudo apt-get install libxml2-dev libxslt-dev
-$ pip install -r requirements.txt
+git submodule update --init
+virtualenv --distribute venv
+source ./venv/bin/activate
+pip install http://sourceforge.net/projects/pychecker/files/pychecker/0.8.19/pychecker-0.8.19.tar.gz/download
+sudo apt-get install libxml2-dev libxslt-dev
+pip install -r requirements.txt
 ````
 
 then configure application specific settings. see the sample configuration contents for details.
 ````
-$ cp ./nicocomment.config.sample ./nicocomment.config
-$ vi ./nicocomment.config
+cp ./nicocomment.config.sample ./nicocomment.config
+vi ./nicocomment.config
 ````
 
 configure environment
@@ -51,35 +51,33 @@ nicocomment requires lots of os resources, please tune the system as followings.
 
 first, check the current resource limit configuration.
 ````
-$ ulimit -a
+ulimit -a
 ````
 
 then configure the max open files and max open processes settings.
 ````
-$ sudo vi /etc/security/limits.conf
+sudo vi /etc/security/limits.conf
 
 # for opening tons of sockets to comment servers.
-honishi soft nofile 65536
-honishi hard nofile 65536
+honishi - nofile 65536
 
 # for forking thread in the live comment listening.
 # thread is treated as process internally in the kernel that uses NPTL(Native POSIX Thread Library)
-honishi soft nproc 65536
-honishi hard nproc 65536
+honishi - nproc 65536
 ````
 
 restart the box and check the settings above are successfully configured.
 ````
-$ sudo reboot
-$ ulimit -a
+sudo reboot
+ulimit -a
 ````
 
 start & stop
 --
 just use start & stop.
 ````
-$ ./nicocomment.sh start
-$ ./nicocomment.sh stop
+./nicocomment.sh start
+./nicocomment.sh stop
 ````
 
 monitoring example using crontab
