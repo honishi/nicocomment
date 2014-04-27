@@ -14,6 +14,8 @@ nohupfile=${basedir}/log/nohup.out
 logfile=${basedir}/log/nicocomment.log
 alertlogfile=${basedir}/log/alert.log
 
+max_stack_size=128
+
 
 start() {
   if [ 0 -lt $(pgrep -f "${pgrep_target}" | wc -l) ]
@@ -59,6 +61,8 @@ monitor() {
   echo $(date) monitor end
   return ${restarted}
 }
+
+ulimit -s ${max_stack_size}
 
 cd ${basedir}
 source ${pyenv}
