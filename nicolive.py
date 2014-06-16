@@ -330,7 +330,7 @@ class NicoLive(object):
         self.check_opening_room(room_position, premium)
         self.check_user_id(user_id, comment)
 
-        self.comments.append((dt.now(), premium, user_id))
+        self.comments.append((dt.now(), premium, user_id, comment))
         self.should_recalculate_active = True
 
     # examines stream contents
@@ -561,15 +561,26 @@ class NicoLive(object):
         current_datetime = dt.now()
 
         for index in xrange(len(self.comments)-1, -1, -1):
-            (comment_datetime, premium, user_id) = self.comments[index]
+            (comment_datetime, premium, user_id, comment) = self.comments[index]
+
+            if (current_datetime - comment_datetime >
+                    timedelta(seconds=active_calcuration_duration)):
+                break
 
             # premium 0: non-paid user, 1: paid user
             if not premium in ["0", "1"]:
                 continue
 
-            if (current_datetime - comment_datetime >
-                    timedelta(seconds=active_calcuration_duration)):
-                break
+            # detecting spam comment
+            # [ぁ-ん], [一-龠]
+            if not re.search(ur'[一-龠]', comment):
+                continue
+
+            # if re.search(ur'(さおり|超)', comment):
+            #     continue
+
+            if self.is_duplicate_comment(comment):
+                continue
 
             if not user_id in unique_users:
                 unique_users.append(user_id)
@@ -589,6 +600,27 @@ class NicoLive(object):
                     self.update_twitter_status(DEFAULT_CREDENTIAL_KEY, status)
                 if self.community_id in self.target_communities:
                     self.update_twitter_status(self.community_id, status)
+
+    def is_duplicate_comment(self, comment):
+        scan_comment_range = 30
+        scanned_comment_count = 0
+        duplicate_comment_count = 0
+
+        for index in xrange(len(self.comments)-1, -1, -1):
+            (comment_datetime, premium, user_id, past_comment) = self.comments[index]
+
+            if comment == past_comment:
+                duplicate_comment_count += 1
+
+            if 1 < duplicate_comment_count:
+                return True
+
+            scanned_comment_count += 1
+
+            if scan_comment_range < scanned_comment_count:
+                break
+
+        return False
 
 # private methods, twitter
     # user-related
