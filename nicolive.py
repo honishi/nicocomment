@@ -579,7 +579,7 @@ class NicoLive(object):
             # if re.search(ur'(さおり|超)', comment):
             #     continue
 
-            if self.is_duplicate_comment(comment):
+            if self.is_duplicate_comment(comment, index):
                 continue
 
             if not user_id in unique_users:
@@ -601,12 +601,12 @@ class NicoLive(object):
                 if self.community_id in self.target_communities:
                     self.update_twitter_status(self.community_id, status)
 
-    def is_duplicate_comment(self, comment):
+    def is_duplicate_comment(self, comment, start):
         scan_comment_range = 30
         scanned_comment_count = 0
         duplicate_comment_count = 0
 
-        for index in xrange(len(self.comments)-1, -1, -1):
+        for index in xrange(start, -1, -1):
             (comment_datetime, premium, user_id, past_comment) = self.comments[index]
 
             if comment == past_comment:
