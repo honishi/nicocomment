@@ -573,7 +573,7 @@ class NicoLive(object):
 
             # detecting spam comment
             # [ぁ-ん], [一-龠]
-            if not re.search(ur'[一-龠]', comment):
+            if not re.search(ur'([ぁ-ん]|[一-龠])', comment):
                 continue
 
             # if re.search(ur'(さおり|超)', comment):
@@ -602,7 +602,7 @@ class NicoLive(object):
                     self.update_twitter_status(self.community_id, status)
 
     def is_duplicate_comment(self, comment, start):
-        scan_comment_range = 30
+        scan_comment_range = 100
         scanned_comment_count = 0
         duplicate_comment_count = 0
 
