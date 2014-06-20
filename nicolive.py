@@ -263,7 +263,7 @@ class NicoLive(object):
         if self.live_logging:
             self.log_file_obj = self.open_live_log_file()
 
-        for room_position in xrange(4):
+        for room_position in xrange(6):
             self.open_room_tweeted[room_position] = False
 
         retry_count = 0
@@ -356,13 +356,21 @@ class NicoLive(object):
                     room_name += u"B"
                 elif room_position == 3:
                     room_name += u"C"
+                elif room_position == 4:
+                    room_name += u"D"
+                elif room_position == 5:
+                    room_name += u"E"
                 else:
                     room_name += u"X"
                 status = self.create_stand_room_status(room_name)
 
-                if (DEFAULT_CREDENTIAL_KEY in self.target_communities and
-                        1 < room_position and
-                        NicoLive.tweet_frequency_mode == TWEET_FREQUENCY_MODE_NORMAL):
+                has_credential = DEFAULT_CREDENTIAL_KEY in self.target_communities
+                matched_normal_condition = (
+                    1 < room_position and
+                    NicoLive.tweet_frequency_mode == TWEET_FREQUENCY_MODE_NORMAL)
+                matched_extra_condition = 3 < room_position
+
+                if has_credential and (matched_normal_condition or matched_extra_condition):
                     self.update_twitter_status(DEFAULT_CREDENTIAL_KEY, status)
 
                 if self.community_id in self.target_communities:
