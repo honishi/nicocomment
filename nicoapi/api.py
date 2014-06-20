@@ -511,8 +511,12 @@ class NicoAPI(object):
         else:
             host, port, thread = self.get_arena_comment_server(
                 live_type, distance_from_arena, host, port, thread)
-            # arena + stand a + b + c + d + e
-            room_count = 6
+            if live_type == LIVE_TYPE_OFFICIAL:
+                # temp: arena + stand a + b + c
+                room_count = 4
+            elif live_type == LIVE_TYPE_USER:
+                # arena + stand a + b + c + d + e
+                room_count = 6
 
         host_prefix, host_number, host_surfix = self.split_host(host)
         for unused_i in xrange(room_count):
