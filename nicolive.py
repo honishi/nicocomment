@@ -263,7 +263,9 @@ class NicoLive(object):
         if self.live_logging:
             self.log_file_obj = self.open_live_log_file()
 
-        for room_position in xrange(6):
+        max_thread_count = max(nicoapi.api.MAX_THREAD_COUNT_IN_OFFICIAL_LIVE,
+                               nicoapi.api.MAX_THREAD_COUNT_IN_USER_LIVE)
+        for room_position in xrange(max_thread_count):
             self.open_room_tweeted[room_position] = False
 
         retry_count = 0
@@ -349,25 +351,14 @@ class NicoLive(object):
                 logging.info("skipped 'open room' tweets.")
                 self.open_room_tweeted[room_position] = True
             else:
-                room_name = u"立ち見"
-                if room_position == 1:
-                    room_name += u"A"
-                elif room_position == 2:
-                    room_name += u"B"
-                elif room_position == 3:
-                    room_name += u"C"
-                elif room_position == 4:
-                    room_name += u"D"
-                elif room_position == 5:
-                    room_name += u"E"
-                else:
-                    room_name += u"X"
+                room_name = u"立ち見" + chr(ord('A') + room_position - 1)
                 status = self.create_stand_room_status(room_name)
 
                 has_credential = DEFAULT_CREDENTIAL_KEY in self.target_communities
                 matched_normal_condition = (
                     1 < room_position and
                     NicoLive.tweet_frequency_mode == TWEET_FREQUENCY_MODE_NORMAL)
+                # always tweet when opens stand d, e, f,...
                 matched_extra_condition = 3 < room_position
 
                 if has_credential and (matched_normal_condition or matched_extra_condition):

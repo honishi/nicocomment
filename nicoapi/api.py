@@ -48,6 +48,10 @@ COMMENT_SERVER_PORT_OFFICIAL_LAST = 2817
 COMMENT_SERVER_PORT_USER_FIRST = 2805
 COMMENT_SERVER_PORT_USER_LAST = 2814
 
+# threads count, arene(1), stand a(2), b(3), c(4), d(5), e(6), f(7), g(8), h(9), i(10) ...
+MAX_THREAD_COUNT_IN_OFFICIAL_LIVE = 4
+MAX_THREAD_COUNT_IN_USER_LIVE = 8
+
 
 class NicoAPI(object):
     # cookie
@@ -477,18 +481,9 @@ class NicoAPI(object):
             elif live_type == LIVE_TYPE_USER:
                 matched_room = re.match(u'立ち見(\w)列', room_label)
                 if matched_room:
-                    # stand A, B, C, D, E. host, port, thread should be adjusted
+                    # room is not arena, so host, port and thread should be adjusted
                     stand_type = matched_room.group(1)
-                    if stand_type == "A":
-                        distance = 1
-                    elif stand_type == "B":
-                        distance = 2
-                    elif stand_type == "C":
-                        distance = 3
-                    elif stand_type == "D":
-                        distance = 4
-                    elif stand_type == "E":
-                        distance = 5
+                    distance = ord(stand_type) - ord('A') + 1
                 if distance == -1:
                     logging.warning("could not parse room label: %s" % room_label)
 
@@ -512,11 +507,9 @@ class NicoAPI(object):
             host, port, thread = self.get_arena_comment_server(
                 live_type, distance_from_arena, host, port, thread)
             if live_type == LIVE_TYPE_OFFICIAL:
-                # temp: arena + stand a + b + c
-                room_count = 4
+                room_count = MAX_THREAD_COUNT_IN_OFFICIAL_LIVE
             elif live_type == LIVE_TYPE_USER:
-                # arena + stand a + b + c + d + e
-                room_count = 6
+                room_count = MAX_THREAD_COUNT_IN_USER_LIVE
 
         host_prefix, host_number, host_surfix = self.split_host(host)
         for unused_i in xrange(room_count):
@@ -732,7 +725,8 @@ class NicoAPI(object):
         return user_id, premium, self.convert_to_unicode(comment)
 
     def check_ifseetno(self, comment):
-        if len(self.opened_live_threads) == 6:
+        if (len(self.opened_live_threads) ==
+                max(MAX_THREAD_COUNT_IN_OFFICIAL_LIVE, MAX_THREAD_COUNT_IN_USER_LIVE)):
             # logging.debug("detected ifseetno, but already opened max live threads")
             pass
         elif (self.thread_local_vars.room_position + 1 == len(self.opened_live_threads) and
