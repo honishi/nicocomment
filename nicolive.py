@@ -32,10 +32,10 @@ TWEET_RATE_WATCHING_MINUTES = 60
 DEFAULT_CREDENTIAL_KEY = "all"
 
 # retry values
-RETRY_INTERVAL_GET_STREAM_INFO = 30
+RETRY_INTERVAL_GET_STREAM_INFO = 2
 RETRY_INTERVAL_LISTEN_LIVE = 1
 
-MAX_RETRY_COUNT_GET_STREAM_INFO = 5
+MAX_RETRY_COUNT_GET_STREAM_INFO = 100
 MAX_RETRY_COUNT_LISTEN_LIVE = 5
 # retrying for 30 min for the case like comingsoon, full, block_now_count_overflow
 MAX_RETRY_COUNT_LISTEN_LIVE_LONG = 30 * 60 / RETRY_INTERVAL_LISTEN_LIVE
@@ -404,6 +404,9 @@ class NicoLive(object):
 # private methods, live information
     def get_live_basic_info(self, callback):
         live_start_time = dt.now()
+        community_name = "n/a"
+        live_name = "n/a"
+        description = "n/a"
 
         retry_count = 0
         while True:
@@ -415,6 +418,9 @@ class NicoLive(object):
                         (community_name, live_name, description))
                 break
             except Exception, e:
+                if e.code == 'not_permitted':
+                    logging.debug("received not_permitted from stream info, so skip retry.")
+                    break
                 if retry_count < MAX_RETRY_COUNT_GET_STREAM_INFO:
                     logging.debug("retrying to open getstreaminfo, retry count: %d/%d" %
                                   (retry_count, MAX_RETRY_COUNT_GET_STREAM_INFO))
@@ -423,9 +429,6 @@ class NicoLive(object):
                                   "retry count: %d/%d" %
                                   (retry_count, MAX_RETRY_COUNT_GET_STREAM_INFO))
                     logging.error("could not get stream info: %s" % e)
-                    community_name = "n/a"
-                    live_name = "n/a"
-                    description = "n/a"
                     break
                 time.sleep(RETRY_INTERVAL_GET_STREAM_INFO)
                 retry_count += 1
