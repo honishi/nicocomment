@@ -14,6 +14,8 @@ import gzip
 import tweepy
 
 import nicoapi
+import nicoutil
+
 
 # tweet threasholds
 OPEN_ROOM_TWEET_THREASHOLD = 2
@@ -370,14 +372,17 @@ class NicoLive(object):
     def check_user_id(self, user_id, comment):
         if DEBUG_FORCE_USER_TWEET_AND_EXIT:
             user_id = self.target_users[0]
-            status = self.create_monitored_comment_status(user_id, comment)
-            self.update_twitter_status(user_id, status)
+            statuses = self.create_monitored_comment_statuses(user_id, comment)
+            # if 1 < len(statuses):
+            for status in statuses:
+                self.update_twitter_status(user_id, status)
             os.sys.exit()
         else:
             for monitoring_user_id in self.target_users:
                 if user_id == monitoring_user_id:
-                    status = self.create_monitored_comment_status(user_id, comment)
-                    self.update_twitter_status(user_id, status)
+                    statuses = self.create_monitored_comment_statuses(user_id, comment)
+                    for status in statuses:
+                        self.update_twitter_status(user_id, status)
 
 # private methods, live utility
     def should_mute_live(self):
@@ -626,13 +631,15 @@ class NicoLive(object):
 
 # private methods, twitter
     # user-related
-    def create_monitored_comment_status(self, user_id, comment):
-        comment = re.sub(ur'/press show \w+ ', '', comment)
+    def create_monitored_comment_statuses(self, user_id, comment):
+        header = u"【%s】\n" % (unicode(self.header_text[user_id], 'utf8'))
 
-        status = u"【%s】\n%s\n%s%s\n(%s)" % (
-            unicode(self.header_text[user_id], 'utf8'), comment,
-            LIVE_URL, self.live_id, self.community_name)
-        return status
+        comment = re.sub(ur'/press show \w+ ', '', comment)
+        status = u"%s\n%s%s\n(%s)" % (comment, LIVE_URL, self.live_id, self.community_name)
+
+        statuses = nicoutil.create_twitter_statuses(header, u"[続き] ", status, u" [続く]")
+
+        return statuses
 
     # community-related
     def create_start_live_status(self):
