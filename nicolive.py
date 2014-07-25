@@ -42,6 +42,9 @@ MAX_RETRY_COUNT_LISTEN_LIVE = 5
 # retrying for 30 min for the case like comingsoon, full, block_now_count_overflow
 MAX_RETRY_COUNT_LISTEN_LIVE_LONG = 30 * 60 / RETRY_INTERVAL_LISTEN_LIVE
 
+# cookie reset threasholds
+COOKIE_RESET_THREASHOLD_WHEN_NOT_PERMITTED = 1000
+
 # subthread intervals,
 # global is for all lives and class-wide one, local is for a live and instance-wide one
 GLOBAL_MANAGING_THREAD_INTERVAL = 10
@@ -86,6 +89,8 @@ class NicoLive(object):
     tweets = []
     tweets_rate = 0
     tweet_frequency_mode = TWEET_FREQUENCY_MODE_NORMAL
+
+    not_permitted_count = 0
 
 # magic methods
     def __init__(self, mail, password, community_id, live_id, user_id):
@@ -424,8 +429,7 @@ class NicoLive(object):
                 break
             except Exception, e:
                 if e.code == 'not_permitted':
-                    logging.debug("received not_permitted from stream info, so skip retry.")
-                    break
+                    self.handle_not_permitted()
                 if retry_count < MAX_RETRY_COUNT_GET_STREAM_INFO:
                     logging.debug("retrying to open getstreaminfo, retry count: %d/%d" %
                                   (retry_count, MAX_RETRY_COUNT_GET_STREAM_INFO))
@@ -439,6 +443,15 @@ class NicoLive(object):
                 retry_count += 1
 
         callback(live_start_time, community_name, live_name, description)
+
+    def handle_not_permitted(self):
+        NicoLive.not_permitted_count += 1
+        logging.debug("received not_permitted, total count: %d" % NicoLive.not_permitted_count)
+
+        if COOKIE_RESET_THREASHOLD_WHEN_NOT_PERMITTED < NicoLive.not_permitted_count:
+            logging.debug("detected too many not_permitted, so clearing cookie.")
+            self.api.reset_cookie_container()
+            NicoLive.not_permitted_count = 0
 
     def set_live_basic_info(self, live_start_time, community_name, live_name, description):
         self.live_start_time = live_start_time
