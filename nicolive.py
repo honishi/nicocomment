@@ -69,6 +69,7 @@ ENABLE_CONFIG_CACHE = False
 DEBUG_LOG_COMMENT_TO_APP_LOG = False
 DEBUG_LOG_COMMENT_TO_STDOUT = False
 DEBUG_FORCE_USER_TWEET_AND_EXIT = False
+# DEBUG_FORCE_USER_TWEET_AND_EXIT = True
 DEBUG_SKIP_STREAM_INFO = False
 
 
@@ -378,9 +379,9 @@ class NicoLive(object):
         if DEBUG_FORCE_USER_TWEET_AND_EXIT:
             user_id = self.target_users[0]
             statuses = self.create_monitored_comment_statuses(user_id, comment)
-            # if 1 < len(statuses):
-            for status in statuses:
-                self.update_twitter_status(user_id, status)
+            if 0 < len(statuses):
+                for status in statuses:
+                    self.update_twitter_status(user_id, status)
             os.sys.exit()
         else:
             for monitoring_user_id in self.target_users:
@@ -650,7 +651,11 @@ class NicoLive(object):
         comment = re.sub(ur'/press show \w+ ', '', comment)
         status = u"%s\n%s%s\n(%s)" % (comment, LIVE_URL, self.live_id, self.community_name)
 
-        statuses = nicoutil.create_twitter_statuses(header, u"[続き] ", status, u" [続く]")
+        current_datetime = dt.now().strftime('%H:%M:%S')
+        continued_mark = u"[続き%s] " % (current_datetime)
+        continue_mark = u" [続く%s]" % (current_datetime)
+
+        statuses = nicoutil.create_twitter_statuses(header, continued_mark, status, continue_mark)
 
         return statuses
 
