@@ -34,16 +34,13 @@ TWEET_RATE_WATCHING_MINUTES = 60
 DEFAULT_CREDENTIAL_KEY = "all"
 
 # retry values
-RETRY_INTERVAL_GET_STREAM_INFO = 30
+RETRY_INTERVAL_GET_STREAM_INFO = 3
 RETRY_INTERVAL_LISTEN_LIVE = 1
 
-MAX_RETRY_COUNT_GET_STREAM_INFO = 10
+MAX_RETRY_COUNT_GET_STREAM_INFO = 5
 MAX_RETRY_COUNT_LISTEN_LIVE = 5
 # retrying for 30 min for the case like comingsoon, full, block_now_count_overflow
 MAX_RETRY_COUNT_LISTEN_LIVE_LONG = 30 * 60 / RETRY_INTERVAL_LISTEN_LIVE
-
-# cookie reset threasholds
-COOKIE_RESET_THREASHOLD_WHEN_NOT_PERMITTED = 1000
 
 # subthread intervals,
 # global is for all lives and class-wide one, local is for a live and instance-wide one
@@ -429,8 +426,6 @@ class NicoLive(object):
                         (community_name, live_name, description))
                 break
             except Exception, e:
-                if e.code == 'not_permitted':
-                    self.handle_not_permitted()
                 if retry_count < MAX_RETRY_COUNT_GET_STREAM_INFO:
                     logging.debug("retrying to open getstreaminfo, retry count: %d/%d" %
                                   (retry_count, MAX_RETRY_COUNT_GET_STREAM_INFO))
@@ -439,20 +434,11 @@ class NicoLive(object):
                                   "retry count: %d/%d" %
                                   (retry_count, MAX_RETRY_COUNT_GET_STREAM_INFO))
                     logging.error("could not get stream info: %s" % e)
-                    break
+                    os.sys.exit()
                 time.sleep(RETRY_INTERVAL_GET_STREAM_INFO)
                 retry_count += 1
 
         callback(live_start_time, community_name, live_name, description)
-
-    def handle_not_permitted(self):
-        NicoLive.not_permitted_count += 1
-        logging.debug("received not_permitted, total count: %d" % NicoLive.not_permitted_count)
-
-        if COOKIE_RESET_THREASHOLD_WHEN_NOT_PERMITTED < NicoLive.not_permitted_count:
-            logging.debug("detected too many not_permitted, so clearing cookie.")
-            self.api.reset_cookie_container()
-            NicoLive.not_permitted_count = 0
 
     def set_live_basic_info(self, live_start_time, community_name, live_name, description):
         self.live_start_time = live_start_time
@@ -652,8 +638,8 @@ class NicoLive(object):
         status = u"%s\n%s%s\n(%s)" % (comment, LIVE_URL, self.live_id, self.community_name)
 
         current_datetime = dt.now().strftime('%H:%M:%S')
-        continued_mark = u"[続き%s] " % (current_datetime)
-        continue_mark = u" [続く%s]" % (current_datetime)
+        continued_mark = u"[続き](%s) " % (current_datetime)
+        continue_mark = u" [続く](%s)" % (current_datetime)
 
         statuses = nicoutil.create_twitter_statuses(header, continued_mark, status, continue_mark)
 
