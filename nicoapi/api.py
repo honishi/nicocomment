@@ -699,13 +699,13 @@ class NicoAPI(object):
                 for chat_element in chat_elements:
                     self.thread_local_vars.comment_count += 1
 
-                    user_id, premium, comment = self.parse_chat_element(chat_element)
+                    mail, user_id, premium, comment = self.parse_chat_element(chat_element)
                     self.check_ifseetno(comment)
                     should_close_connection = self.check_disconnect(premium, comment)
 
                     if self.chat_handler:
-                        self.chat_handler(
-                            self.thread_local_vars.room_position, user_id, premium, comment)
+                        self.chat_handler(self.thread_local_vars.room_position,
+                                          mail, user_id, premium, comment)
 
                     if should_close_connection:
                         break
@@ -716,13 +716,14 @@ class NicoAPI(object):
 
     def parse_chat_element(self, chat):
         # logging.debug(etree.tostring(chat))
+        mail = chat.attrib.get('mail')
         user_id = chat.attrib.get('user_id')
         premium = chat.attrib.get('premium')
         if premium is None:
             premium = "0"
         comment = chat.text
 
-        return user_id, premium, self.convert_to_unicode(comment)
+        return mail, user_id, premium, self.convert_to_unicode(comment)
 
     def check_ifseetno(self, comment):
         if (len(self.opened_live_threads) ==
