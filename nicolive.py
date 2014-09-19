@@ -345,8 +345,8 @@ class NicoLive(object):
         if room_position == 0 or self.open_room_tweeted[room_position]:
             return
 
-        # assume the comment from 0(ippan), 1(premium), 7(bsp) as a sign of opening room
-        if not premium in ['0', '1', '7']:
+        # assume the comment from 0(ippan), 1(premium) as a sign of opening room
+        if not premium in ['0', '1']:
             return
 
         if 0 < room_position:

@@ -52,6 +52,9 @@ COMMENT_SERVER_PORT_USER_LAST = 2814
 MAX_THREAD_COUNT_IN_OFFICIAL_LIVE = 4
 MAX_THREAD_COUNT_IN_USER_LIVE = 8
 
+# threshold to detect new thread in live
+MIN_COMMENT_COUNT_TO_OPEN_NEXT_THREAD = 30
+
 
 class NicoAPI(object):
     # cookie
@@ -697,10 +700,13 @@ class NicoAPI(object):
                     # logging.debug("chat xml: %s" % message)
                     pass
                 for chat_element in chat_elements:
-                    self.thread_local_vars.comment_count += 1
-
                     mail, user_id, premium, comment = self.parse_chat_element(chat_element)
-                    self.check_ifseetno(comment)
+                    if self.is_user_comment(premium):
+                        self.thread_local_vars.comment_count += 1
+
+                    self.check_and_add_live_thread(len(self.opened_live_threads),
+                                                   self.thread_local_vars.room_position,
+                                                   self.thread_local_vars.comment_count)
                     should_close_connection = self.check_disconnect(premium, comment)
 
                     if self.chat_handler:
@@ -725,20 +731,31 @@ class NicoAPI(object):
 
         return mail, user_id, premium, self.convert_to_unicode(comment)
 
-    def check_ifseetno(self, comment):
-        if (len(self.opened_live_threads) ==
-                max(MAX_THREAD_COUNT_IN_OFFICIAL_LIVE, MAX_THREAD_COUNT_IN_USER_LIVE)):
-            # logging.debug("detected ifseetno, but already opened max live threads")
-            pass
-        elif (self.thread_local_vars.room_position + 1 == len(self.opened_live_threads) and
-                re.match(r'/hb ifseetno', comment)):
-            logging.debug("detected ifseetno in current last room, so open new thread")
+    def check_and_add_live_thread(self, opened_thread_count, room_position, comment_count):
+        # already opened max thread?
+        max_thread_count = max(MAX_THREAD_COUNT_IN_OFFICIAL_LIVE, MAX_THREAD_COUNT_IN_USER_LIVE)
+        is_opened_max_threads = (opened_thread_count == max_thread_count)
+
+        if is_opened_max_threads:
+            return
+
+        # is this python thread for current last live thread?
+        is_current_last_thread = (room_position == (opened_thread_count - 1))
+
+        if not is_current_last_thread:
+            return
+
+        # has enough comments?
+        has_enough_comments = (MIN_COMMENT_COUNT_TO_OPEN_NEXT_THREAD < comment_count)
+
+        if has_enough_comments:
+            logging.debug("detected some user comments in current last room, so open new thread")
             self.add_live_thread()
 
     def check_disconnect(self, premium, comment):
         should_close_connection = False
 
-        if premium in ['2', '3'] and comment == "/disconnect":
+        if self.is_system_comment(premium) and comment == "/disconnect":
             # see the references below for details of the conbination of premium
             # attribute value and disconnect command:
             # - http://www.yukun.info/blog/2008/08/python-if-for-in.html
@@ -749,6 +766,12 @@ class NicoAPI(object):
             should_close_connection = True
 
         return should_close_connection
+
+    def is_user_comment(self, premium):
+        return (premium in ['0', '1'])
+
+    def is_system_comment(self, premium):
+        return (premium in ['2', '3'])
 
 # private methods, utility
     def convert_to_unicode(self, s):
