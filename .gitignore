@@ -13,3 +13,5 @@ log/live.*
 !*.env.sample
 
 profile.*
+
+.idea/

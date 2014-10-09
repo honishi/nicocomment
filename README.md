@@ -31,7 +31,6 @@ setup
 --
 first, setup runtime environment.
 ````
-git submodule update --init
 virtualenv --distribute venv
 source ./venv/bin/activate
 pip install http://sourceforge.net/projects/pychecker/files/pychecker/0.8.19/pychecker-0.8.19.tar.gz/download

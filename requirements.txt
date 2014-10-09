@@ -17,5 +17,6 @@ python-coveralls==2.4.2
 requests==2.1.0
 sh==1.09
 six==1.4.1
+tweepy==2.3.0
 wsgiref==0.1.2
 yappi==0.82
