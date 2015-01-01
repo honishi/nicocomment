@@ -34,7 +34,7 @@ first, setup runtime environment.
 virtualenv --distribute venv
 source ./venv/bin/activate
 pip install http://sourceforge.net/projects/pychecker/files/pychecker/0.8.19/pychecker-0.8.19.tar.gz/download
-sudo apt-get install libxml2-dev libxslt-dev
+sudo apt-get install python-dev libxml2-dev libxslt-dev
 pip install -r requirements.txt
 ````
 

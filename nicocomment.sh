@@ -14,7 +14,7 @@ nohupfile=${basedir}/log/nohup.out
 logfile=${basedir}/log/nicocomment.log
 alertlogfile=${basedir}/log/alert.log
 
-max_stack_size=128
+max_stack_size=120
 
 
 start() {
