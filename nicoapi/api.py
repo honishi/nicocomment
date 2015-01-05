@@ -49,7 +49,7 @@ COMMENT_SERVER_PORT_USER_FIRST = 2805
 COMMENT_SERVER_PORT_USER_LAST = 2814
 
 # threads count, arene(1), stand a(2), b(3), c(4), d(5), e(6), f(7), g(8), h(9), i(10) ...
-MAX_THREAD_COUNT_IN_OFFICIAL_LIVE = 4
+MAX_THREAD_COUNT_IN_OFFICIAL_LIVE = 6
 MAX_THREAD_COUNT_IN_USER_LIVE = 8
 
 # threshold to detect new thread in live
@@ -476,19 +476,13 @@ class NicoAPI(object):
             # logging.debug("no need to adjust the room")
             distance = 0
         else:
-            if live_type == LIVE_TYPE_OFFICIAL:
-                # TODO: temporary implementation
-                logging.warning("official live but could not parse the room label properly. "
-                                "this is expected, cause it's still not implemented.")
-                pass
-            elif live_type == LIVE_TYPE_USER:
-                matched_room = re.match(u'立ち見(\w)列', room_label)
-                if matched_room:
-                    # room is not arena, so host, port and thread should be adjusted
-                    stand_type = matched_room.group(1)
-                    distance = ord(stand_type) - ord('A') + 1
-                if distance == -1:
-                    logging.warning("could not parse room label: %s" % room_label)
+            # room is not arena, so host, port and thread should be adjusted
+            matched_room = re.match(u'立ち見(\w)列', room_label)
+            if matched_room:
+                stand_type = matched_room.group(1)
+                distance = ord(stand_type) - ord('A') + 1
+            if distance == -1:
+                logging.warning("could not parse room label: %s" % room_label)
 
         return distance
 
@@ -747,8 +741,9 @@ class NicoAPI(object):
 
         # has enough comments?
         has_enough_comments = (MIN_COMMENT_COUNT_TO_OPEN_NEXT_THREAD < comment_count)
+        opened_all_threads = (len(self.opened_live_threads) == len(self.comment_servers))
 
-        if has_enough_comments:
+        if has_enough_comments and not opened_all_threads:
             logging.debug("detected some user comments in current last room, so open new thread")
             self.add_live_thread()
 
