@@ -33,7 +33,6 @@ first, setup runtime environment.
 ````
 virtualenv --distribute venv
 source ./venv/bin/activate
-pip install http://sourceforge.net/projects/pychecker/files/pychecker/0.8.19/pychecker-0.8.19.tar.gz/download
 sudo apt-get install python-dev libxml2-dev libxslt-dev
 pip install -r requirements.txt
 ````
@@ -42,19 +41,6 @@ then configure application specific settings. see the sample configuration conte
 ````
 cp ./nicocomment.config.sample ./nicocomment.config
 vi ./nicocomment.config
-````
-
-#### setup note for mac os x
-before running `pip install`,
-    * comment out `distribute` in `requirements.txt`
-    * install required packages
-
-````
-# distribute==0.6.34
-````
-````
-xcode-select --install
-brew install libxml2 libxslt
 ````
 
 configure environment
