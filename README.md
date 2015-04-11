@@ -44,6 +44,19 @@ cp ./nicocomment.config.sample ./nicocomment.config
 vi ./nicocomment.config
 ````
 
+#### setup note for mac os x
+before running `pip install`,
+    * comment out `distribute` in `requirements.txt`
+    * install required packages
+
+````
+# distribute==0.6.34
+````
+````
+xcode-select --install
+brew install libxml2 libxslt
+````
+
 configure environment
 --
 nicocomment requires lots of os resources, please tune the system as followings.
