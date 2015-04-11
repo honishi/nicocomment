@@ -40,13 +40,27 @@ MAX_RECENT_LIVES_COUNT = 10000
 DEFAULT_SOCKET_TIMEOUT_ALERT = 60
 DEFAULT_SOCKET_TIMEOUT_LIVE = 60 * 30
 
-# comment server magic numbers
-COMMENT_SERVER_HOST_NUMBER_FIRST = 101
-COMMENT_SERVER_HOST_NUMBER_LAST = 104
-COMMENT_SERVER_PORT_OFFICIAL_FIRST = 2815
-COMMENT_SERVER_PORT_OFFICIAL_LAST = 2817
-COMMENT_SERVER_PORT_USER_FIRST = 2805
-COMMENT_SERVER_PORT_USER_LAST = 2814
+# comment server list
+COMMENT_SERVERS_USER = [
+    (101, 2805), (101, 2806), (101, 2807), (101, 2808), (101, 2809),
+    (101, 2810), (101, 2811), (101, 2812), (101, 2813), (101, 2814),
+    (102, 2805), (102, 2806), (102, 2807), (102, 2808), (102, 2809),
+    (102, 2810), (102, 2811), (102, 2812), (102, 2813), (102, 2814),
+    (103, 2805), (103, 2806), (103, 2807), (103, 2808), (103, 2809),
+    (103, 2810), (103, 2811), (103, 2812), (103, 2813), (103, 2814),
+    (104, 2805), (104, 2806), (104, 2807), (104, 2808), (104, 2809),
+    (104, 2810), (104, 2811), (104, 2812), (104, 2813), (104, 2814),
+    (105, 2845), (105, 2846), (105, 2847), (105, 2848), (105, 2849),
+    (105, 2850), (105, 2851), (105, 2852), (105, 2853), (105, 2854)
+]
+
+COMMENT_SERVERS_OFFICIAL = [
+    (101, 2815), (102, 2815), (103, 2815), (104, 2815),
+    (101, 2816), (102, 2816), (103, 2816), (104, 2816),
+    (101, 2817), (102, 2817), (103, 2817), (104, 2817),
+    (105, 2867), (106, 2880), (105, 2868), (106, 2881),
+    (105, 2869), (106, 2882)
+]
 
 # threads count, arene(1), stand a(2), b(3), c(4), d(5), e(6), f(7), g(8), h(9), i(10) ...
 MAX_THREAD_COUNT_IN_OFFICIAL_LIVE = 6
@@ -494,6 +508,7 @@ class NicoAPI(object):
             (live_type, distance_from_arena, host, port, thread))
         """
         comment_servers = []
+        assigned_server = [(host, port, thread)]
 
         room_count = 0
         if distance_from_arena < 0:
@@ -501,8 +516,15 @@ class NicoAPI(object):
             # so use host, port and thread with no change
             room_count = 1
         else:
-            host, port, thread = self.get_arena_comment_server(
+            server = self.get_arena_comment_server(
                 live_type, distance_from_arena, host, port, thread)
+            if server is None:
+                return assigned_server
+
+            host = server[0]
+            port = server[1]
+            thread = server[2]
+
             if live_type == LIVE_TYPE_OFFICIAL:
                 room_count = MAX_THREAD_COUNT_IN_OFFICIAL_LIVE
             elif live_type == LIVE_TYPE_USER:
@@ -512,8 +534,13 @@ class NicoAPI(object):
         for unused_i in xrange(room_count):
             comment_servers.append(
                 (host_prefix + str(host_number) + host_surfix, port, thread))
-            host_number, port, thread = self.next_comment_server(
-                live_type, host_number, port, thread)
+            server = self.next_comment_server(live_type, host_number, port, thread)
+            if server is None:
+                return assigned_server
+
+            host_number = server[0]
+            port = server[1]
+            thread = server[2]
 
         return comment_servers
 
@@ -530,50 +557,32 @@ class NicoAPI(object):
         return host_prefix, host_number, host_surfix
 
     def previous_comment_server(self, live_type, host_number, port, thread):
-        if live_type == LIVE_TYPE_OFFICIAL:
-            if host_number == COMMENT_SERVER_HOST_NUMBER_FIRST:
-                host_number = COMMENT_SERVER_HOST_NUMBER_LAST
-                if port == COMMENT_SERVER_PORT_OFFICIAL_FIRST:
-                    port = COMMENT_SERVER_PORT_OFFICIAL_LAST
-                else:
-                    port -= 1
-            else:
-                host_number -= 1
-        elif live_type == LIVE_TYPE_USER:
-            if port == COMMENT_SERVER_PORT_USER_FIRST:
-                port = COMMENT_SERVER_PORT_USER_LAST
-                if host_number == COMMENT_SERVER_HOST_NUMBER_FIRST:
-                    host_number = COMMENT_SERVER_HOST_NUMBER_LAST
-                else:
-                    host_number -= 1
-            else:
-                port -= 1
-        thread -= 1
-
-        return (host_number, port, thread)
+        return self.neighbor_comment_server(-1, live_type, host_number, port, thread)
 
     def next_comment_server(self, live_type, host_number, port, thread):
-        if live_type == LIVE_TYPE_OFFICIAL:
-            if host_number == COMMENT_SERVER_HOST_NUMBER_LAST:
-                host_number = COMMENT_SERVER_HOST_NUMBER_FIRST
-                if port == COMMENT_SERVER_PORT_OFFICIAL_LAST:
-                    port = COMMENT_SERVER_PORT_OFFICIAL_FIRST
-                else:
-                    port += 1
-            else:
-                host_number += 1
-        elif live_type == LIVE_TYPE_USER:
-            if port == COMMENT_SERVER_PORT_USER_LAST:
-                port = COMMENT_SERVER_PORT_USER_FIRST
-                if host_number == COMMENT_SERVER_HOST_NUMBER_LAST:
-                    host_number = COMMENT_SERVER_HOST_NUMBER_FIRST
-                else:
-                    host_number += 1
-            else:
-                port += 1
-        thread += 1
+        return self.neighbor_comment_server(1, live_type, host_number, port, thread)
 
-        return (host_number, port, thread)
+    def neighbor_comment_server(self, direction, live_type, host_number, port, thread):
+        assert direction == -1 or direction == 1
+
+        server = None
+        is_official = live_type == LIVE_TYPE_OFFICIAL
+        thread += direction
+
+        if direction == -1 and self.is_first_server(is_official, host_number, port):
+            server = self.get_last_server(is_official)
+        elif direction == 1 and self.is_last_server(is_official, host_number, port):
+            server = self.get_first_server(is_official)
+        else:
+            index = self.get_server_index(is_official, host_number, port)
+            if index is not None:
+                servers = COMMENT_SERVERS_OFFICIAL if is_official else COMMENT_SERVERS_USER
+                server = servers[index + direction]
+
+        if server is None:
+            return None
+
+        return server[0], server[1], thread
 
     def get_arena_comment_server(
             self, live_type, distance, provided_host, provided_port, provided_thread):
@@ -586,10 +595,49 @@ class NicoAPI(object):
             return (host, port, thread)
 
         for unused_i in xrange(distance):
-            (host_number, port, thread) = self.previous_comment_server(
+            server = self.previous_comment_server(
                 live_type, host_number, port, thread)
+            if server is None:
+                return None
+
+            host_number = server[0]
+            port = server[1]
+            thread = server[2]
 
         return (host_prefix + str(host_number) + host_surfix, port, thread)
+
+    def get_server_index(self, is_official, host_number, port):
+        servers = COMMENT_SERVERS_OFFICIAL if is_official else COMMENT_SERVERS_USER
+        index = 0
+
+        for (num, p) in servers:
+            if host_number == num and port == p:
+                return index
+            index += 1
+
+        return None
+
+    def is_first_server(self, is_official, host_number, port):
+        servers = COMMENT_SERVERS_OFFICIAL if is_official else COMMENT_SERVERS_USER
+        return self.is_server_at_index(servers, host_number, port, 0)
+
+    def is_last_server(self, is_official, host_number, port):
+        servers = COMMENT_SERVERS_OFFICIAL if is_official else COMMENT_SERVERS_USER
+        return self.is_server_at_index(servers, host_number, port, len(servers) - 1)
+
+    def is_server_at_index(self, servers, host_number, port, index):
+        if servers[index][0] == host_number and servers[index][1] == port:
+            return True
+
+        return False
+
+    def get_first_server(self, is_official):
+        servers = COMMENT_SERVERS_OFFICIAL if is_official else COMMENT_SERVERS_USER
+        return servers[0]
+
+    def get_last_server(self, is_official):
+        servers = COMMENT_SERVERS_OFFICIAL if is_official else COMMENT_SERVERS_USER
+        return servers[len(servers) - 1]
 
 # private methods, comment server socket
     def open_comment_server(self, room_position, host, port, thread):
