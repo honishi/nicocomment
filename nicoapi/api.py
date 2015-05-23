@@ -38,7 +38,7 @@ MAX_RECENT_LIVES_COUNT = 10000
 
 # constants, socket
 DEFAULT_SOCKET_TIMEOUT_ALERT = 60
-DEFAULT_SOCKET_TIMEOUT_LIVE = 60 * 30
+DEFAULT_SOCKET_TIMEOUT_LIVE = 60
 
 # comment server list
 COMMENT_SERVERS_USER = [
@@ -660,7 +660,11 @@ class NicoAPI(object):
                 try:
                     recved = sock.recv(1024)
                 except socket.timeout, unused_e:
-                    logging.debug("detected timeout at socket recv().")
+                    # logging.debug("detected timeout at socket recv(), so ping.")
+                    sock.sendall("<ping>PING</ping>" + chr(0))
+                    continue
+                except Exception, e:
+                    logging.warning("detected error at socket recv(). [%s]" % e)
                     break
                 should_close_connection = False
 
