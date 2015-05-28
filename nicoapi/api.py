@@ -39,6 +39,7 @@ MAX_RECENT_LIVES_COUNT = 10000
 # constants, socket
 DEFAULT_SOCKET_TIMEOUT_ALERT = 60
 DEFAULT_SOCKET_TIMEOUT_LIVE = 60
+LOST_CONNECTION_PRESUMPTION_SECONDS = 1 * 60 * 60
 
 # comment server list
 COMMENT_SERVERS_USER = [
@@ -644,6 +645,7 @@ class NicoAPI(object):
         self.thread_local_vars.room_position = room_position
         self.thread_local_vars.comment_count = 0
         self.thread_local_vars.tweeted_open_room = False
+        self.thread_local_vars.last_chat_datetime = dt.now()
 
         if thread in NicoAPI.all_opened_thread_ids:
             logging.warning("live thread is already opened, so skip.")
@@ -657,6 +659,10 @@ class NicoAPI(object):
         if sock:
             message = ""
             while True:
+                if self.has_lost_connection():
+                    logging.debug("detected possible lost connection, so break thread.")
+                    break
+
                 try:
                     recved = sock.recv(1024)
                 except socket.timeout, unused_e:
@@ -714,6 +720,10 @@ class NicoAPI(object):
 
         return sock
 
+    def has_lost_connection(self):
+        seconds_since_last_chat = (dt.now() - self.thread_local_vars.last_chat_datetime).seconds
+        return LOST_CONNECTION_PRESUMPTION_SECONDS < seconds_since_last_chat
+
     def parse_live_stream(self, message):
         should_close_connection = False
 
@@ -746,6 +756,8 @@ class NicoAPI(object):
                     # logging.debug("chat xml: %s" % message)
                     pass
                 for chat_element in chat_elements:
+                    self.thread_local_vars.last_chat_datetime = dt.now()
+
                     mail, user_id, premium, comment = self.parse_chat_element(chat_element)
                     if self.is_user_comment(premium):
                         self.thread_local_vars.comment_count += 1
